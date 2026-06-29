@@ -104,7 +104,7 @@
       <summary>ルール</summary>
       <ul>
         <li><b>図形＝点を線で結んで囲む</b>：自分の石（点）どうしを盤の直線に沿って結び、閉じた多角形を作ると内側が領地になります。四角形なら頂点4点でよく、辺の途中の交点に石は不要です。</li>
-        <li><b>大きさ＝図形の数</b>：囲んだ内側に含まれる最小単位の面の数が領地の大きさです。境界線（辺）自体は数に含みません。</li>
+        <li><b>大きさ＝図形の面分</b>：囲んだ内側の面積を盤面の図形単位で数えます。大きい面はその分だけ多く数え、境界線（辺）自体は数に含みません。</li>
         <li><b>置けない所</b>：相手の石がある点には置けません。相手領地の内部（接する面が全て相手）にも置けません。境界線上には置けます。</li>
         <li><b>効力消失</b>：相手に内部へ取り込まれた石は取り除かれます（境界上なら残る）。</li>
         <li><b>角</b>：四隅は各プレイヤー2つまで。</li>
@@ -229,11 +229,17 @@ function enclosedBy(X){
   const enc=[]; for(let f=0;f<NF;f++) if(!seen[f]) enc.push(f);
   return enc;
 }
-function resolve(){
+function resolve(active=turn){
   let changed=true, guard=0;
   while(changed && guard++<40){
     changed=false;
-    for(const X of [turn,3-turn]) for(const f of enclosedBy(X)) if(owner[f]!==X){owner[f]=X;changed=true;}
+    const first=active||turn||1, second=3-first;
+    const encFirst=new Set(enclosedBy(first));
+    const encSecond=new Set(enclosedBy(second));
+    for(let f=0;f<NF;f++){
+      const next=encFirst.has(f)?first:(encSecond.has(f)?second:owner[f]);
+      if(next&&owner[f]!==next){owner[f]=next;changed=true;}
+    }
     for(let v=0; v<NV; v++){
       if(stones[v]===0) continue;
       const e=3-stones[v], fs=inc(v);
@@ -241,7 +247,8 @@ function resolve(){
     }
   }
 }
-const countOf=p=>{let n=0;for(let f=0;f<NF;f++)if(owner[f]===p)n++;return n;};
+const countOf=p=>{let n=0;for(let f=0;f<NF;f++)if(owner[f]===p)n+=(BOARD.faces[f].area||1);return Math.round(n*100)/100;};
+const fmtScore=n=>Number.isInteger(n)?String(n):String(Number(n.toFixed(2)));
 
 function place(v){
   if(!canPlace(v,turn)){
@@ -253,11 +260,11 @@ function place(v){
   pushH();
   const before=countOf(turn);
   stones[v]=turn; if(isCorner(v)) cornersUsed[turn]++;
-  resolve(); passCount=0;
+  resolve(turn); passCount=0;
   const gained=countOf(turn)-before;
   const w=checkWin();
   if(w){ over=true; render(); win(w,"相手の初期領地をすべて奪いました！"); return; }
-  setStatus(gained>0?`${COLname(turn)}が${gained}面を領地にしました。`:`${COLname(turn)}が石を置きました。`);
+  setStatus(gained>0?`${COLname(turn)}が${fmtScore(gained)}面分を領地にしました。`:`${COLname(turn)}が石を置きました。`);
   turn=3-turn; render();
 }
 function checkWin(){
@@ -281,13 +288,13 @@ function doPass(){
 }
 function endByScore(){
   over=true; const a=countOf(1),c=countOf(2); render();
-  if(c>a) win(2,`図形数 ${c} 対 ${a} で勝利`);
-  else if(a>c) win(1,`図形数 ${a} 対 ${c} で勝利`);
-  else win(0,`引き分け（${c} 対 ${a}）`);
+  if(c>a) win(2,`図形数 ${fmtScore(c)} 対 ${fmtScore(a)} で勝利`);
+  else if(a>c) win(1,`図形数 ${fmtScore(a)} 対 ${fmtScore(c)} で勝利`);
+  else win(0,`引き分け（${fmtScore(c)} 対 ${fmtScore(a)}）`);
 }
 function judge(){
-  resolve(); render();
-  setStatus(`判定を更新しました（赤 ${countOf(2)}面・青 ${countOf(1)}面）。`);
+  resolve(turn); render();
+  setStatus(`判定を更新しました（赤 ${fmtScore(countOf(2))}面分・青 ${fmtScore(countOf(1))}面分）。`);
 }
 function undo(){ if(hist.length){ restore(hist.pop()); setStatus('1手戻しました。'); render(); } }
 
@@ -295,8 +302,8 @@ function setStatus(t){ document.getElementById('status').textContent=t; }
 function render(){
   document.getElementById('nf').textContent=NF;
   document.getElementById('nv').textContent=NV;
-  document.getElementById('t1').textContent=countOf(1);
-  document.getElementById('t2').textContent=countOf(2);
+  document.getElementById('t1').textContent=fmtScore(countOf(1));
+  document.getElementById('t2').textContent=fmtScore(countOf(2));
   document.getElementById('c1').textContent=cornersUsed[1];
   document.getElementById('c2').textContent=cornersUsed[2];
   const pin=document.getElementById('turnpin'), txt=document.getElementById('turntxt');
