@@ -144,10 +144,6 @@ const IMG="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAUEBAYFBQ
 const ERASED_BOARD_LINES=[[10,11],[24,25]];
 BOARD.p1stones=[26,27,32,33];
 BOARD.p2stones=[2,3,8,9];
-const OPPONENT_BACK_EDGE_PASS={
-  1:{rail:'0_1_2_3_4_5',verts:new Set([2,3])},
-  2:{rail:'30_31_32_33_34_35',verts:new Set([32,33])}
-};
 const erasedKey=(a,b)=>a<b?a+'_'+b:b+'_'+a;
 const erasedEdgeKeys=new Set(ERASED_BOARD_LINES.map(([a,b])=>erasedKey(a,b)));
 BOARD.edges=BOARD.edges.filter(([a,b])=>!erasedEdgeKeys.has(erasedKey(a,b)));
@@ -196,22 +192,14 @@ function canPlace(v,p){
   if(isCorner(v)&&cornersUsed[p]>=2) return false;
   return true;
 }
-// walls for X: along each straight rail, segments between X-stones (broken by enemy stones)
+// walls for X: along each straight rail, segments between X-stones.
+// Enemy stones on that line do not break the boundary; they can sit on the edge.
 function wallEdges(X){
   const wall=new Set();
   for(const rail of RAILS){
-    const pass=OPPONENT_BACK_EDGE_PASS[X];
-    const railKey=rail.join('_');
-    const blocks=v=>stones[v]===3-X && !(pass && pass.rail===railKey && pass.verts.has(v));
-    const L=rail.length; let i=0;
-    while(i<L){
-      if(blocks(rail[i])){i++;continue;}
-      let j=i; while(j<L && !blocks(rail[j])) j++;
-      let first=-1,last=-1;
-      for(let k=i;k<j;k++) if(stones[rail[k]]===X){ if(first<0)first=k; last=k; }
-      if(first>=0&&last>first) for(let k=first;k<last;k++) wall.add(ekey(rail[k],rail[k+1]));
-      i=j;
-    }
+    let first=-1,last=-1;
+    for(let k=0;k<rail.length;k++) if(stones[rail[k]]===X){ if(first<0)first=k; last=k; }
+    if(first>=0&&last>first) for(let k=first;k<last;k++) wall.add(ekey(rail[k],rail[k+1]));
   }
   return wall;
 }
