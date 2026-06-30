@@ -224,10 +224,12 @@ function resolve(active=turn){
     const first=active||turn||1, second=3-first;
     const encFirst=new Set(enclosedBy(first));
     const encSecond=new Set(enclosedBy(second));
+    const nextOwner=new Array(NF).fill(0);
     for(let f=0;f<NF;f++){
-      const next=encFirst.has(f)?first:(encSecond.has(f)?second:owner[f]);
-      if(next&&owner[f]!==next){owner[f]=next;changed=true;}
+      nextOwner[f]=encFirst.has(f)?first:(encSecond.has(f)?second:0);
+      if(owner[f]!==nextOwner[f]) changed=true;
     }
+    owner=nextOwner;
     for(let v=0; v<NV; v++){
       if(stones[v]===0) continue;
       const e=3-stones[v], fs=inc(v);
