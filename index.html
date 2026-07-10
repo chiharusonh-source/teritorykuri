@@ -272,8 +272,29 @@ function wallEdges(X){
   }
   return wall;
 }
-function enclosedBy(X){
+function prunedWallEdges(X){
   const wall=wallEdges(X);
+  const deg={};
+  const addDeg=(v,k)=>{(deg[v]=deg[v]||[]).push(k);};
+  for(const k of wall){
+    const [a,b]=k.split('_').map(Number);
+    addDeg(a,k); addDeg(b,k);
+  }
+  let changed=true;
+  while(changed){
+    changed=false;
+    for(const v in deg){
+      const edges=deg[v].filter(k=>wall.has(k));
+      if(edges.length===1){
+        wall.delete(edges[0]);
+        changed=true;
+      }
+    }
+  }
+  return wall;
+}
+function enclosedBy(X){
+  const wall=prunedWallEdges(X);
   const seen=new Array(NF).fill(false), q=[];
   for(const k of boundaryEdges) if(!wall.has(k)){const f=edgeFaces[k][0]; if(!seen[f]){seen[f]=true;q.push(f);}}
   while(q.length){
@@ -283,36 +304,7 @@ function enclosedBy(X){
       for(const g of edgeFaces[ekey(u,w)]) if(!seen[g]){seen[g]=true;q.push(g);}
     }
   }
-  const boundary=new Set(boundaryEdges), enc=[], used=new Array(NF).fill(false);
-  for(let start=0; start<NF; start++){
-    if(seen[start]||used[start]) continue;
-    const comp=[], stack=[start];
-    used[start]=true;
-    while(stack.length){
-      const f=stack.pop();
-      comp.push(f);
-      for(const [u,w] of faceEdges[f]){
-        const k=ekey(u,w);
-        if(wall.has(k)) continue;
-        for(const g of edgeFaces[k]){
-          if(!seen[g]&&!used[g]){
-            used[g]=true;
-            stack.push(g);
-          }
-        }
-      }
-    }
-    const compSet=new Set(comp);
-    let closed=true;
-    for(const f of comp){
-      for(const [u,w] of faceEdges[f]){
-        const k=ekey(u,w), outside=boundary.has(k)||edgeFaces[k].some(g=>!compSet.has(g));
-        if(outside&&!wall.has(k)&&!boundary.has(k)){closed=false; break;}
-      }
-      if(!closed) break;
-    }
-    if(closed) enc.push(...comp);
-  }
+  const enc=[]; for(let f=0;f<NF;f++) if(!seen[f]) enc.push(f);
   return enc;
 }
 function computeOwners(){
@@ -432,6 +424,9 @@ function render(){
   drawSVG();
 }
 const polyPts=vs=>vs.map(v=>PX(V[v][0])+','+PY(V[v][1])).join(' ');
+function reduceMotion(){
+  return typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 function drawSVG(){
   let s=`<svg viewBox="0 0 ${IG.w} ${IG.h}" xmlns="http://www.w3.org/2000/svg">`;
   s+=`<image href="${IMG}" x="0" y="0" width="${IG.w}" height="${IG.h}"/>`;
@@ -442,15 +437,18 @@ function drawSVG(){
   }
   const newFaces=new Set(lastGainedFaces);
   const canAct=!onlineMode||onlineRole===turn;
+  const animate=!reduceMotion();
   for(let f=0;f<NF;f++) if(owner[f]){
     const cls=`territory${newFaces.has(f)?' new':''}`;
-    s+=`<polygon class="${cls}" points="${polyPts(BOARD.faces[f].vs)}" fill="${owner[f]===1?'var(--p1fill)':'var(--p2fill)'}"/>`;
+    const fade=animate&&newFaces.has(f)?'<animate attributeName="opacity" from="0" to="1" dur="0.25s" fill="freeze"/>':'';
+    s+=`<polygon class="${cls}" points="${polyPts(BOARD.faces[f].vs)}" fill="${owner[f]===1?'var(--p1fill)':'var(--p2fill)'}">${fade}</polygon>`;
   }
   for(let v=0; v<NV; v++){
     const cx=PX(V[v][0]),cy=PY(V[v][1]),corner=isCorner(v);
     if(stones[v]!==0){
       const cls=`stone${v===lastPlacedVertex?' pop':''}`;
-      s+=`<circle class="${cls}" cx="${cx}" cy="${cy}" r="17" fill="${stones[v]===1?'var(--p1)':'var(--p2)'}" stroke="#fff" stroke-width="4"/>`;
+      const pop=animate&&v===lastPlacedVertex?'<animate attributeName="r" from="0" to="17" dur="0.15s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.2 0 0 1"/>':'';
+      s+=`<circle class="${cls}" cx="${cx}" cy="${cy}" r="17" fill="${stones[v]===1?'var(--p1)':'var(--p2)'}" stroke="#fff" stroke-width="4">${pop}</circle>`;
     } else {
       if(corner) s+=`<circle cx="${cx}" cy="${cy}" r="11" fill="#fff" stroke="var(--gold)" stroke-width="4"/>`;
       else s+=`<circle cx="${cx}" cy="${cy}" r="7" fill="#fff" stroke="#5a6172" stroke-width="2.5"/>`;
@@ -509,6 +507,14 @@ async function copyRoomCode(){
     else throw new Error('clipboard unavailable');
     setOnlineStatus('招待コードをコピーしました。');
   }catch(e){
+    const el=document.getElementById('onlineCode');
+    if(typeof window!=='undefined'&&window.getSelection&&document.createRange){
+      const range=document.createRange();
+      range.selectNodeContents(el);
+      const sel=window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
     setOnlineStatus(`招待コード: ${code}`);
   }
 }
