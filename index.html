@@ -47,6 +47,19 @@
     cursor:pointer;font-family:inherit;background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.14)}
   button.dark{background:var(--ink);color:#fff}
   button:active{transform:translateY(1px)} button:disabled{opacity:.4}
+  .boardbox{position:relative}
+  .boardbox.locked svg{filter:saturate(.7);opacity:.74}
+  .boardbox.locked:after{content:"相手の手番";position:absolute;inset:auto 14px 14px auto;
+    background:rgba(29,35,48,.88);color:#fff;border-radius:10px;padding:8px 12px;
+    font-size:13px;font-weight:800;pointer-events:none}
+  .online{display:none;margin-top:12px;background:#fff;border-radius:12px;padding:12px;
+    box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .online.show{display:block}
+  .online .minirow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .online input{width:100%;border:1px solid #d8d1bf;border-radius:10px;padding:11px 10px;
+    font:inherit;font-weight:800;text-align:center;letter-spacing:2px}
+  .online .code{font-weight:900;font-size:20px;letter-spacing:3px;color:#2440a8}
+  .online .ostatus{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
   .note{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.6}
   details{margin-top:12px;background:#fff;border-radius:12px;padding:2px 14px;font-size:13px;line-height:1.7}
   details summary{cursor:pointer;font-weight:700;padding:9px 0}
@@ -74,6 +87,8 @@
     hr{margin:10px 0}
     .btns{gap:8px}
     button{min-height:48px;border-radius:10px;padding:11px 8px;font-size:14px}
+    .online{padding:10px}
+    .online .minirow{grid-template-columns:1fr}
     details{margin-top:10px;border-radius:10px;padding:0 12px;font-size:12px}
     details summary{padding:9px 0}
     .note{font-size:11px;margin-top:10px}
@@ -95,6 +110,7 @@
     button{min-height:44px}
   }
 </style>
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -127,6 +143,20 @@
         <button id="undoBtn">戻す</button>
         <button id="resetBtn">リセット</button>
         <button id="judgeBtn">判定更新</button>
+        <button id="onlineBtn">オンライン</button>
+      </div>
+      <div class="online" id="onlinePanel">
+        <div class="row"><span class="lab">接続状態</span><span class="val" id="onlineState">未接続</span></div>
+        <div class="row"><span class="lab">招待コード</span><span class="code" id="onlineCode">------</span></div>
+        <div class="minirow">
+          <button class="dark" id="createRoomBtn">部屋を作る</button>
+          <input id="joinCode" inputmode="numeric" maxlength="6" placeholder="6桁">
+        </div>
+        <div class="minirow">
+          <button id="joinRoomBtn">参加</button>
+          <button id="disconnectOnlineBtn">切断</button>
+        </div>
+        <div class="ostatus" id="onlineStatus">未接続。オフラインでは従来どおり遊べます。</div>
       </div>
       <div class="note">アップロードされた盤面画像をそのまま使用し、上下2つの正方形を初期領地にしています。</div>
     </div>
@@ -170,6 +200,7 @@ for(let f=0; f<NF; f++){
 const boundaryEdges=Object.keys(edgeFaces).filter(k=>edgeFaces[k].length===1);
 
 let stones, owner, turn, cornersUsed, passCount, over, hist, lastWinReason;
+let peer=null, conn=null, onlineMode=false, onlineRole=0, onlineRoomCode='';
 
 function init(){
   stones=new Array(NV).fill(0); owner=new Array(NF).fill(0);
@@ -243,7 +274,15 @@ function resolve(){
 const countOf=p=>{let n=0;for(let f=0;f<NF;f++)if(owner[f]===p)n+=(BOARD.faces[f].area||1);return Math.round(n*100)/100;};
 const fmtScore=n=>Number.isInteger(n)?String(n):String(Number(n.toFixed(2)));
 
-function place(v){
+function place(v, remote=false){
+  if(onlineMode&&!remote&&onlineRole!==turn){
+    setStatus('相手の手番です。');
+    render(); return;
+  }
+  if(onlineMode&&remote&&onlineRole===turn){
+    setOnlineStatus('同期がずれた可能性があります。判定を止めました。');
+    return;
+  }
   if(!canPlace(v,turn)){
     setStatus(stones[v]!==0?"そこには石があります":
       (enemyInterior(v,turn)?"相手領地の内部には置けません":
@@ -255,6 +294,7 @@ function place(v){
   stones[v]=turn; if(isCorner(v)) cornersUsed[turn]++;
   resolve(); passCount=0;
   const gained=countOf(turn)-before;
+  if(onlineMode&&!remote) sendOnline({type:'move',v});
   const w=checkWin();
   if(w){ over=true; render(); win(w,"相手の初期領地をすべて奪いました！"); return; }
   setStatus(gained>0?`${COLname(turn)}が${fmtScore(gained)}面分を領地にしました。`:`${COLname(turn)}が石を置きました。`);
@@ -274,6 +314,7 @@ function checkWin(){
 }
 function doPass(){
   if(over) return;
+  if(onlineMode){ setStatus('オンライン中はパスできません。'); return; }
   pushH(); passCount++;
   if(passCount>=2){ endByScore(); return; }
   setStatus(`${COLname(turn)}がパスしました。`);
@@ -287,10 +328,14 @@ function endByScore(){
   else win(0,`引き分け（${fmtScore(c)} 対 ${fmtScore(a)}）`);
 }
 function judge(){
+  if(onlineMode){ setStatus('オンライン中は判定更新を使えません。'); return; }
   resolve(); render();
   setStatus(`判定を更新しました（赤 ${fmtScore(countOf(2))}面分・青 ${fmtScore(countOf(1))}面分）。`);
 }
-function undo(){ if(hist.length){ restore(hist.pop()); setStatus('1手戻しました。'); render(); } else lastWinReason=null; }
+function undo(){
+  if(onlineMode){ setStatus('オンライン中は戻せません。'); return; }
+  if(hist.length){ restore(hist.pop()); setStatus('1手戻しました。'); render(); } else lastWinReason=null;
+}
 
 function setStatus(t){ document.getElementById('status').textContent=t; }
 function render(){
@@ -303,8 +348,12 @@ function render(){
   const pin=document.getElementById('turnpin'), txt=document.getElementById('turntxt');
   if(over){ pin.style.background='#bbb'; txt.textContent='ゲーム終了'; }
   else{ pin.style.background=turn===1?'var(--p1)':'var(--p2)'; txt.textContent=COLname(turn)+'の手番'; }
-  document.getElementById('undoBtn').disabled=hist.length===0;
-  document.getElementById('passBtn').disabled=over;
+  document.getElementById('undoBtn').disabled=onlineMode||hist.length===0;
+  document.getElementById('passBtn').disabled=over||onlineMode;
+  document.getElementById('judgeBtn').disabled=onlineMode;
+  document.getElementById('resetBtn').disabled=onlineMode;
+  const boardBox=document.querySelector('.boardbox');
+  if(boardBox) boardBox.classList.toggle('locked', onlineMode&&!over&&onlineRole!==turn);
   drawSVG();
 }
 const polyPts=vs=>vs.map(v=>PX(V[v][0])+','+PY(V[v][1])).join(' ');
@@ -351,10 +400,66 @@ function win(p,sub){
   document.getElementById('bSub').textContent=sub;
   document.getElementById('banner').classList.add('show');
 }
+function roomPeerId(code){return `teritorykuri-${code}`;}
+function makeRoomCode(){return String(Math.floor(100000+Math.random()*900000));}
+function setOnlineState(label){document.getElementById('onlineState').textContent=label;}
+function setOnlineStatus(text){document.getElementById('onlineStatus').textContent=text;}
+function showOnlinePanel(){document.getElementById('onlinePanel').classList.toggle('show');}
+function sendOnline(msg){if(conn&&conn.open) conn.send(msg);}
+function startOnlineGame(role){
+  onlineMode=true; onlineRole=role; init(); turn=1; passCount=0; hist=[]; render();
+  setOnlineState('対戦中');
+  setOnlineStatus(role===1?'対戦中。あなたは青です。':'対戦中。あなたは赤です。');
+}
+function bindConnection(c, role){
+  conn=c;
+  conn.on('data',msg=>{
+    if(!msg||typeof msg!=='object') return;
+    if(msg.type==='start') startOnlineGame(2);
+    if(msg.type==='move') place(msg.v,true);
+  });
+  conn.on('close',()=>{onlineMode=false; setOnlineState('切断'); setOnlineStatus('切断されました。ローカルでは続けられます。'); render();});
+  conn.on('error',()=>{onlineMode=false; setOnlineState('切断'); setOnlineStatus('通信エラーで切断されました。'); render();});
+  conn.on('open',()=>{
+    if(role===1){startOnlineGame(1); sendOnline({type:'start'});}
+    else{setOnlineState('待機中'); setOnlineStatus('ホストの開始を待っています。');}
+  });
+}
+function closeOnline(){
+  onlineMode=false; onlineRole=0; onlineRoomCode='';
+  if(conn){try{conn.close();}catch(e){} conn=null;}
+  if(peer){try{peer.destroy();}catch(e){} peer=null;}
+  document.getElementById('onlineCode').textContent='------';
+  setOnlineState('未接続'); setOnlineStatus('未接続。オフラインでは従来どおり遊べます。');
+  render();
+}
+function createRoom(){
+  if(typeof Peer==='undefined'){setOnlineStatus('PeerJSを読み込めませんでした。ネットワークを確認してください。'); return;}
+  closeOnline(); onlineRoomCode=makeRoomCode();
+  document.getElementById('onlineCode').textContent=onlineRoomCode;
+  setOnlineState('待機中'); setOnlineStatus('相手に招待コードを伝えてください。');
+  peer=new Peer(roomPeerId(onlineRoomCode));
+  peer.on('connection',c=>bindConnection(c,1));
+  peer.on('error',()=>{setOnlineState('切断'); setOnlineStatus('部屋を作れませんでした。もう一度試してください。');});
+}
+function joinRoom(){
+  if(typeof Peer==='undefined'){setOnlineStatus('PeerJSを読み込めませんでした。ネットワークを確認してください。'); return;}
+  const code=document.getElementById('joinCode').value.replace(/\D/g,'').slice(0,6);
+  if(code.length!==6){setOnlineStatus('6桁の招待コードを入力してください。'); return;}
+  closeOnline(); onlineRoomCode=code; document.getElementById('onlineCode').textContent=code;
+  setOnlineState('待機中'); setOnlineStatus('接続しています。');
+  peer=new Peer();
+  peer.on('open',()=>bindConnection(peer.connect(roomPeerId(code),{reliable:true}),2));
+  peer.on('error',()=>{setOnlineState('切断'); setOnlineStatus('接続できませんでした。コードを確認してください。');});
+}
 document.getElementById('passBtn').addEventListener('click',doPass);
 document.getElementById('undoBtn').addEventListener('click',undo);
 document.getElementById('resetBtn').addEventListener('click',()=>{document.getElementById('banner').classList.remove('show');init();});
 document.getElementById('judgeBtn').addEventListener('click',judge);
+document.getElementById('onlineBtn').addEventListener('click',showOnlinePanel);
+document.getElementById('createRoomBtn').addEventListener('click',createRoom);
+document.getElementById('joinRoomBtn').addEventListener('click',joinRoom);
+document.getElementById('disconnectOnlineBtn').addEventListener('click',closeOnline);
 init();
 </script>
 </body>
