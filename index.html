@@ -52,14 +52,38 @@
   .boardbox.locked:after{content:"相手の手番";position:absolute;inset:auto 14px 14px auto;
     background:rgba(29,35,48,.88);color:#fff;border-radius:10px;padding:8px 12px;
     font-size:13px;font-weight:800;pointer-events:none}
-  .online{display:none;margin-top:12px;background:#fff;border-radius:12px;padding:12px;
-    box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .online{display:none;margin-top:14px;background:#fff;border-radius:12px;padding:13px;
+    border-top:4px solid #26324a;box-shadow:0 1px 2px rgba(0,0,0,.06)}
   .online.show{display:block}
+  .online .head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+  .online h3{margin:0;font-size:16px;line-height:1.2}
+  .badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;
+    font-size:12px;font-weight:900;background:#e5e7eb;color:#4b5563;white-space:nowrap}
+  .badge.wait{background:#fff3c4;color:#8a5b00}
+  .badge.play{background:#d9f7e2;color:#19753a}
+  .badge.cut{background:#ffe0e0;color:#b42318}
+  .online .roleline{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+  .online .pill{border:1px solid #ece3cf;border-radius:10px;padding:8px 9px;font-size:12px;font-weight:800;background:#fffaf0}
+  .online .pill b{display:block;font-size:13px;margin-top:2px;color:var(--ink)}
   .online .minirow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
   .online input{width:100%;border:1px solid #d8d1bf;border-radius:10px;padding:11px 10px;
     font:inherit;font-weight:800;text-align:center;letter-spacing:2px}
-  .online .code{font-weight:900;font-size:20px;letter-spacing:3px;color:#2440a8}
+  .online .codebox{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;
+    border:1px solid #ece3cf;border-radius:12px;padding:10px;margin:8px 0;background:#f8fbff}
+  .online .code{font-weight:900;font-size:26px;letter-spacing:4px;color:#2440a8}
+  .online .copy{padding:10px 12px;min-height:0}
   .online .ostatus{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+  .territory.new{transform-box:fill-box;transform-origin:center;animation:territoryIn .22s ease-out}
+  .stone.pop{transform-box:fill-box;transform-origin:center;animation:stonePop .16s ease-out}
+  .preview{transform-box:fill-box;transform-origin:center;transition:transform .12s ease-out,opacity .12s ease-out}
+  .vhit.can{transform-box:fill-box;transform-origin:center;transition:transform .12s ease-out,fill .12s ease-out}
+  .vhit.can:hover{fill:var(--hint);transform:scale(1.08)}
+  @keyframes stonePop{0%{transform:scale(0);opacity:.15}70%{transform:scale(1.12);opacity:1}100%{transform:scale(1);opacity:1}}
+  @keyframes territoryIn{0%{transform:scale(.965);opacity:.08}100%{transform:scale(1);opacity:1}}
+  @media (prefers-reduced-motion: reduce){
+    .territory.new,.stone.pop{animation:none!important}
+    .preview,.vhit.can{transition:none!important}
+  }
   .note{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.6}
   details{margin-top:12px;background:#fff;border-radius:12px;padding:2px 14px;font-size:13px;line-height:1.7}
   details summary{cursor:pointer;font-weight:700;padding:9px 0}
@@ -88,6 +112,8 @@
     .btns{gap:8px}
     button{min-height:48px;border-radius:10px;padding:11px 8px;font-size:14px}
     .online{padding:10px}
+    .online .head{align-items:flex-start}
+    .online .roleline{grid-template-columns:1fr}
     .online .minirow{grid-template-columns:1fr}
     details{margin-top:10px;border-radius:10px;padding:0 12px;font-size:12px}
     details summary{padding:9px 0}
@@ -110,7 +136,7 @@
     button{min-height:44px}
   }
 </style>
-<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -146,8 +172,18 @@
         <button id="onlineBtn">オンライン</button>
       </div>
       <div class="online" id="onlinePanel">
-        <div class="row"><span class="lab">接続状態</span><span class="val" id="onlineState">未接続</span></div>
-        <div class="row"><span class="lab">招待コード</span><span class="code" id="onlineCode">------</span></div>
+        <div class="head">
+          <h3>オンライン対戦</h3>
+          <span class="badge" id="onlineState">未接続</span>
+        </div>
+        <div class="roleline">
+          <div class="pill">自分の役割<b id="onlineRoleText">ローカル対戦</b></div>
+          <div class="pill">現在の手番<b id="onlineTurnText">-</b></div>
+        </div>
+        <div class="codebox">
+          <span class="code" id="onlineCode">------</span>
+          <button class="copy" id="copyCodeBtn">コピー</button>
+        </div>
         <div class="minirow">
           <button class="dark" id="createRoomBtn">部屋を作る</button>
           <input id="joinCode" inputmode="numeric" maxlength="6" placeholder="6桁">
@@ -201,6 +237,7 @@ const boundaryEdges=Object.keys(edgeFaces).filter(k=>edgeFaces[k].length===1);
 
 let stones, owner, turn, cornersUsed, passCount, over, hist, lastWinReason;
 let peer=null, conn=null, onlineMode=false, onlineRole=0, onlineRoomCode='';
+let lastPlacedVertex=null, lastGainedFaces=[];
 
 function init(){
   stones=new Array(NV).fill(0); owner=new Array(NF).fill(0);
@@ -209,11 +246,12 @@ function init(){
   for(const v of BOARD.p1stones) if(v!=null) stones[v]=1;
   for(const v of BOARD.p2stones) if(v!=null) stones[v]=2;
   turn=2; cornersUsed={1:0,2:0}; passCount=0; over=false; hist=[]; lastWinReason=null;
+  lastPlacedVertex=null; lastGainedFaces=[];
   resolve(); setStatus(''); render();
 }
 const snap=()=>JSON.stringify({s:stones,o:owner,t:turn,c:cornersUsed,p:passCount,ov:over,w:lastWinReason});
 function pushH(){hist.push(snap()); if(hist.length>300)hist.shift();}
-function restore(j){const d=JSON.parse(j);stones=d.s;owner=d.o;turn=d.t;cornersUsed=d.c;passCount=d.p;over=d.ov;lastWinReason=d.w||null;}
+function restore(j){const d=JSON.parse(j);stones=d.s;owner=d.o;turn=d.t;cornersUsed=d.c;passCount=d.p;over=d.ov;lastWinReason=d.w||null;lastPlacedVertex=null;lastGainedFaces=[];}
 
 const isCorner=v=>BOARD.corners.includes(v);
 function enemyInterior(v,p){const e=3-p,fs=inc(v);return fs.length>0&&fs.every(f=>owner[f]===e);}
@@ -291,9 +329,16 @@ function place(v, remote=false){
   }
   pushH();
   const before=countOf(turn);
+  const beforeOwner=owner.slice();
   stones[v]=turn; if(isCorner(v)) cornersUsed[turn]++;
   resolve(); passCount=0;
   const gained=countOf(turn)-before;
+  lastPlacedVertex=v;
+  lastGainedFaces=[];
+  for(let f=0; f<NF; f++) if(owner[f]===turn&&beforeOwner[f]!==turn) lastGainedFaces.push(f);
+  if(!remote&&typeof navigator!=='undefined'&&navigator.vibrate){
+    try{navigator.vibrate(10);}catch(e){}
+  }
   if(onlineMode&&!remote) sendOnline({type:'move',v});
   const w=checkWin();
   if(w){ over=true; render(); win(w,"相手の初期領地をすべて奪いました！"); return; }
@@ -354,6 +399,7 @@ function render(){
   document.getElementById('resetBtn').disabled=onlineMode;
   const boardBox=document.querySelector('.boardbox');
   if(boardBox) boardBox.classList.toggle('locked', onlineMode&&!over&&onlineRole!==turn);
+  updateOnlineInfo();
   drawSVG();
 }
 const polyPts=vs=>vs.map(v=>PX(V[v][0])+','+PY(V[v][1])).join(' ');
@@ -365,21 +411,33 @@ function drawSVG(){
     const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy) || 1, inset=12;
     s+=`<line x1="${ax+dx/len*inset}" y1="${ay+dy/len*inset}" x2="${bx-dx/len*inset}" y2="${by-dy/len*inset}" stroke="#d9e7fb" stroke-width="18" stroke-linecap="round"/>`;
   }
-  for(let f=0;f<NF;f++) if(owner[f]) s+=`<polygon points="${polyPts(BOARD.faces[f].vs)}" fill="${owner[f]===1?'var(--p1fill)':'var(--p2fill)'}"/>`;
+  const newFaces=new Set(lastGainedFaces);
+  const canAct=!onlineMode||onlineRole===turn;
+  for(let f=0;f<NF;f++) if(owner[f]){
+    const cls=`territory${newFaces.has(f)?' new':''}`;
+    s+=`<polygon class="${cls}" points="${polyPts(BOARD.faces[f].vs)}" fill="${owner[f]===1?'var(--p1fill)':'var(--p2fill)'}"/>`;
+  }
   for(let v=0; v<NV; v++){
     const cx=PX(V[v][0]),cy=PY(V[v][1]),corner=isCorner(v);
     if(stones[v]!==0){
-      s+=`<circle cx="${cx}" cy="${cy}" r="17" fill="${stones[v]===1?'var(--p1)':'var(--p2)'}" stroke="#fff" stroke-width="4"/>`;
+      const cls=`stone${v===lastPlacedVertex?' pop':''}`;
+      s+=`<circle class="${cls}" cx="${cx}" cy="${cy}" r="17" fill="${stones[v]===1?'var(--p1)':'var(--p2)'}" stroke="#fff" stroke-width="4"/>`;
     } else {
       if(corner) s+=`<circle cx="${cx}" cy="${cy}" r="11" fill="#fff" stroke="var(--gold)" stroke-width="4"/>`;
       else s+=`<circle cx="${cx}" cy="${cy}" r="7" fill="#fff" stroke="#5a6172" stroke-width="2.5"/>`;
-      if(canPlace(v,turn)&&!over) s+=`<circle cx="${cx}" cy="${cy}" r="5" fill="${turn===1?'var(--p1)':'var(--p2)'}" opacity="0.5"/>`;
+      if(canPlace(v,turn)&&!over&&canAct) s+=`<circle class="preview" cx="${cx}" cy="${cy}" r="5" fill="${turn===1?'var(--p1)':'var(--p2)'}" opacity="0.5"/>`;
     }
-    s+=`<circle class="vhit" data-v="${v}" cx="${cx}" cy="${cy}" r="30" fill="transparent" style="cursor:pointer"/>`;
+    const active=canPlace(v,turn)&&!over&&canAct;
+    const hint=turn===1?'rgba(47,111,224,.16)':'rgba(224,53,107,.16)';
+    s+=`<circle class="vhit${active?' can':''}" data-v="${v}" cx="${cx}" cy="${cy}" r="30" fill="transparent" style="cursor:${active?'pointer':'default'};--hint:${hint}"/>`;
   }
   s+=`</svg>`;
   const host=document.getElementById('svghost'); host.innerHTML=s;
   host.querySelectorAll('.vhit').forEach(el=>el.addEventListener('click',()=>place(+el.dataset.v)));
+  if((lastPlacedVertex!==null||lastGainedFaces.length)&&typeof setTimeout==='function'){
+    const placed=lastPlacedVertex;
+    setTimeout(()=>{ if(lastPlacedVertex===placed){ lastPlacedVertex=null; lastGainedFaces=[]; } },240);
+  }
 }
 function win(p,sub){
   if(lastWinReason&&lastWinReason.type==='home_capture'&&lastWinReason.winner===p){
@@ -402,14 +460,34 @@ function win(p,sub){
 }
 function roomPeerId(code){return `teritorykuri-${code}`;}
 function makeRoomCode(){return String(Math.floor(100000+Math.random()*900000));}
-function setOnlineState(label){document.getElementById('onlineState').textContent=label;}
+function setOnlineState(label){
+  const el=document.getElementById('onlineState');
+  el.textContent=label;
+  el.className='badge '+(label==='待機中'?'wait':label==='対戦中'?'play':label==='切断'?'cut':'');
+}
 function setOnlineStatus(text){document.getElementById('onlineStatus').textContent=text;}
 function showOnlinePanel(){document.getElementById('onlinePanel').classList.toggle('show');}
 function sendOnline(msg){if(conn&&conn.open) conn.send(msg);}
+function updateOnlineInfo(){
+  document.getElementById('onlineRoleText').textContent=!onlineMode?'ローカル対戦':(onlineRole===1?'青（ホスト）':'赤（ゲスト）');
+  document.getElementById('onlineTurnText').textContent=over?'ゲーム終了':(onlineMode?(onlineRole===turn?'あなたの手番':`${COLname(turn)}の手番（相手）`):`${COLname(turn)}の手番`);
+}
+async function copyRoomCode(){
+  const code=document.getElementById('onlineCode').textContent.trim();
+  if(!/^\d{6}$/.test(code)){setOnlineStatus('コピーできる招待コードがありません。'); return;}
+  try{
+    if(typeof navigator!=='undefined'&&navigator.clipboard&&navigator.clipboard.writeText) await navigator.clipboard.writeText(code);
+    else throw new Error('clipboard unavailable');
+    setOnlineStatus('招待コードをコピーしました。');
+  }catch(e){
+    setOnlineStatus(`招待コード: ${code}`);
+  }
+}
 function startOnlineGame(role){
   onlineMode=true; onlineRole=role; init(); turn=1; passCount=0; hist=[]; render();
   setOnlineState('対戦中');
   setOnlineStatus(role===1?'対戦中。あなたは青です。':'対戦中。あなたは赤です。');
+  updateOnlineInfo();
 }
 function bindConnection(c, role){
   conn=c;
@@ -460,6 +538,7 @@ document.getElementById('onlineBtn').addEventListener('click',showOnlinePanel);
 document.getElementById('createRoomBtn').addEventListener('click',createRoom);
 document.getElementById('joinRoomBtn').addEventListener('click',joinRoom);
 document.getElementById('disconnectOnlineBtn').addEventListener('click',closeOnline);
+document.getElementById('copyCodeBtn').addEventListener('click',copyRoomCode);
 init();
 </script>
 </body>
