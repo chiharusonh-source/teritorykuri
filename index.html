@@ -283,7 +283,36 @@ function enclosedBy(X){
       for(const g of edgeFaces[ekey(u,w)]) if(!seen[g]){seen[g]=true;q.push(g);}
     }
   }
-  const enc=[]; for(let f=0;f<NF;f++) if(!seen[f]) enc.push(f);
+  const boundary=new Set(boundaryEdges), enc=[], used=new Array(NF).fill(false);
+  for(let start=0; start<NF; start++){
+    if(seen[start]||used[start]) continue;
+    const comp=[], stack=[start];
+    used[start]=true;
+    while(stack.length){
+      const f=stack.pop();
+      comp.push(f);
+      for(const [u,w] of faceEdges[f]){
+        const k=ekey(u,w);
+        if(wall.has(k)) continue;
+        for(const g of edgeFaces[k]){
+          if(!seen[g]&&!used[g]){
+            used[g]=true;
+            stack.push(g);
+          }
+        }
+      }
+    }
+    const compSet=new Set(comp);
+    let closed=true;
+    for(const f of comp){
+      for(const [u,w] of faceEdges[f]){
+        const k=ekey(u,w), outside=boundary.has(k)||edgeFaces[k].some(g=>!compSet.has(g));
+        if(outside&&!wall.has(k)&&!boundary.has(k)){closed=false; break;}
+      }
+      if(!closed) break;
+    }
+    if(closed) enc.push(...comp);
+  }
   return enc;
 }
 function computeOwners(){
