@@ -227,7 +227,7 @@ function computeOwners(){
   }
   return nextOwner;
 }
-function resolve(active=turn){
+function resolve(){
   owner=computeOwners();
   const removed=[];
   for(let v=0; v<NV; v++){
@@ -253,7 +253,7 @@ function place(v){
   pushH();
   const before=countOf(turn);
   stones[v]=turn; if(isCorner(v)) cornersUsed[turn]++;
-  resolve(turn); passCount=0;
+  resolve(); passCount=0;
   const gained=countOf(turn)-before;
   const w=checkWin();
   if(w){ over=true; render(); win(w,"相手の初期領地をすべて奪いました！"); return; }
@@ -287,7 +287,7 @@ function endByScore(){
   else win(0,`引き分け（${fmtScore(c)} 対 ${fmtScore(a)}）`);
 }
 function judge(){
-  resolve(turn); render();
+  resolve(); render();
   setStatus(`判定を更新しました（赤 ${fmtScore(countOf(2))}面分・青 ${fmtScore(countOf(1))}面分）。`);
 }
 function undo(){ if(hist.length){ restore(hist.pop()); setStatus('1手戻しました。'); render(); } else lastWinReason=null; }
