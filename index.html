@@ -4,75 +4,126 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="description" content="くりやま盤で遊ぶ陣取りゲーム。スマートフォンとPCのブラウザで動く単体HTML版です。">
-<meta name="theme-color" content="#f4d98a">
+<meta name="theme-color" content="#070a13">
 <meta property="og:title" content="陣取りゲーム ― くりやま盤">
 <meta property="og:description" content="くりやま盤で遊ぶ陣取りゲーム。単体HTMLでそのままWeb公開できます。">
 <meta property="og:type" content="website">
 <title>陣取りゲーム ― くりやま盤</title>
 <style>
   :root{
-    --p1:#2f6fe0; --p1fill:rgba(47,111,224,.34);
-    --p2:#e0356b; --p2fill:rgba(224,53,107,.34);
-    --ink:#1d2330; --paper:#f3ead2; --muted:#8a90a0; --gold:#e0a52e;
-    --panel:#fbf6e9; --row:#ffffff;
+    --p1:#4da3ff; --p1fill:rgba(77,163,255,.42);
+    --p2:#ff4d6d; --p2fill:rgba(255,77,109,.42);
+    --ink:#e9edf8; --paper:#f3ead2; --muted:#98a0b8; --gold:#e8b64a;
+    --bg:#03050c; --panel:#0d1326; --row:#141c33; --line:#26325a;
+    --glow1:rgba(77,163,255,.65); --glow2:rgba(255,77,109,.6);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html{min-height:100%;overflow-x:hidden}
-  body{margin:0;background:#f4d98a;color:var(--ink);
+  html{min-height:100%;overflow-x:hidden;background:var(--bg)}
+  body{margin:0;color:var(--ink);position:relative;
+    background:
+      radial-gradient(60% 42% at 82% -8%, rgba(255,77,109,.20), transparent 60%),
+      radial-gradient(60% 42% at 15% 108%, rgba(77,163,255,.22), transparent 60%),
+      radial-gradient(40% 30% at 50% 40%, rgba(120,110,255,.10), transparent 72%),
+      linear-gradient(160deg, #060a18 0%, #03050c 55%, #05030e 100%);
     font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
     min-height:100%;overflow-x:hidden}
-  .wrap{max-width:960px;margin:0 auto;padding:14px 12px 40px;
+  /* 星空: CSSのみで生成した2レイヤー。ゆっくり瞬く */
+  body::before,body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0}
+  body::before{
+    background-image:
+      radial-gradient(1.4px 1.4px at 12% 22%, #fff, transparent),
+      radial-gradient(1.2px 1.2px at 68% 14%, #cfe0ff, transparent),
+      radial-gradient(1.6px 1.6px at 88% 62%, #fff, transparent),
+      radial-gradient(1.1px 1.1px at 33% 78%, #dbe6ff, transparent),
+      radial-gradient(1.3px 1.3px at 52% 48%, #fff, transparent),
+      radial-gradient(1.1px 1.1px at 78% 88%, #c9dcff, transparent),
+      radial-gradient(1.5px 1.5px at 8% 66%, #fff, transparent),
+      radial-gradient(1.2px 1.2px at 44% 8%, #eaf1ff, transparent);
+    opacity:.85;animation:twinkle 6s ease-in-out infinite}
+  body::after{
+    background-image:
+      radial-gradient(1px 1px at 25% 40%, rgba(255,255,255,.7), transparent),
+      radial-gradient(1px 1px at 60% 72%, rgba(200,220,255,.7), transparent),
+      radial-gradient(1px 1px at 82% 30%, rgba(255,255,255,.6), transparent),
+      radial-gradient(1px 1px at 15% 90%, rgba(210,225,255,.6), transparent),
+      radial-gradient(1px 1px at 92% 78%, rgba(255,255,255,.6), transparent),
+      radial-gradient(1px 1px at 40% 58%, rgba(220,230,255,.6), transparent);
+    opacity:.5;animation:twinkle 9s ease-in-out infinite reverse}
+  @keyframes twinkle{0%,100%{opacity:.7}50%{opacity:.32}}
+  .wrap{position:relative;z-index:1;max-width:960px;margin:0 auto;padding:14px 12px 40px;
     display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;justify-content:center}
   .boardcol{flex:1 1 360px;max-width:520px;min-width:300px}
   .panelcol{flex:1 1 320px;max-width:420px;min-width:280px}
-  .boardbox{background:var(--paper);border-radius:16px;padding:0;overflow:hidden;
-    box-shadow:0 4px 14px rgba(0,0,0,.18)}
+  .boardbox{background:#080d1c;border-radius:16px;padding:0;overflow:hidden;
+    box-shadow:0 0 0 1px var(--line),0 12px 40px rgba(0,0,0,.65),
+      0 0 34px rgba(77,163,255,.16),0 0 34px rgba(255,77,109,.13),
+      inset 0 0 60px rgba(10,18,40,.5)}
   svg{width:100%;height:auto;display:block;touch-action:manipulation}
   .panel{background:var(--panel);border-radius:18px;padding:16px 16px 18px;
-    box-shadow:0 4px 14px rgba(0,0,0,.18)}
-  .topline{text-align:right;font-size:13px;font-weight:700;color:#3a4a8a;margin-bottom:10px}
-  .topline b{color:#2440a8}
+    box-shadow:0 0 0 1px var(--line),0 12px 34px rgba(0,0,0,.5)}
+  .topline{text-align:right;font-size:13px;font-weight:700;color:#8fa5e8;margin-bottom:10px}
+  .topline b{color:#cdd9ff}
   .turn{display:flex;align-items:center;gap:10px;font-size:22px;font-weight:800;margin:2px 0 14px}
+  #turntxt{transition:text-shadow .3s ease,color .3s ease}
+  .turn.p1turn #turntxt{color:#bcdcff;text-shadow:0 0 10px var(--glow1),0 0 22px rgba(77,163,255,.4)}
+  .turn.p2turn #turntxt{color:#ffc4d0;text-shadow:0 0 10px var(--glow2),0 0 22px rgba(255,77,109,.4)}
   .turn .pin{width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
   .row{display:flex;align-items:center;justify-content:space-between;background:var(--row);
-    border-radius:12px;padding:11px 14px;margin-bottom:9px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+    border-radius:12px;padding:11px 14px;margin-bottom:9px;box-shadow:inset 0 0 0 1px var(--line)}
   .row .lab{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px}
   .row .dot{width:14px;height:14px;border-radius:50%}
   .row .val{font-weight:800;font-size:18px}
-  .dot.p1{background:var(--p1)} .dot.p2{background:var(--p2)}
+  .dot.p1{background:var(--p1);box-shadow:0 0 9px var(--glow1)}
+  .dot.p2{background:var(--p2);box-shadow:0 0 9px var(--glow2)}
   .status{color:var(--muted);font-size:13px;margin:12px 2px 4px;min-height:18px;line-height:1.5}
-  hr{border:none;border-top:1px solid #e6ddc6;margin:12px 0}
+  hr{border:none;border-top:1px solid var(--line);margin:12px 0}
   .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
   button{border:none;border-radius:12px;padding:13px 8px;font-size:15px;font-weight:800;
-    cursor:pointer;font-family:inherit;background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.14)}
-  button.dark{background:var(--ink);color:#fff}
-  button:active{transform:translateY(1px)} button:disabled{opacity:.4}
+    cursor:pointer;font-family:inherit;background:#1c2440;color:var(--ink);
+    box-shadow:inset 0 0 0 1px var(--line),0 2px 6px rgba(0,0,0,.4);
+    transition:transform .12s ease,box-shadow .12s ease}
+  button.dark{background:linear-gradient(135deg,#26335c,#182342);color:#fff}
+  button:hover:not(:disabled){transform:translateY(-1px);
+    box-shadow:inset 0 0 0 1px #3a4a7e,0 4px 14px rgba(77,163,255,.28)}
+  button:active:not(:disabled){transform:translateY(1px);box-shadow:inset 0 0 0 1px var(--line)}
+  button:disabled{opacity:.4}
+  button:focus-visible{outline:3px solid rgba(77,163,255,.5);outline-offset:2px}
   .boardbox{position:relative}
   .boardbox.locked svg{filter:saturate(.7);opacity:.74}
   .boardbox.locked:after{content:"相手の手番";position:absolute;inset:auto 14px 14px auto;
     background:rgba(29,35,48,.88);color:#fff;border-radius:10px;padding:8px 12px;
     font-size:13px;font-weight:800;pointer-events:none}
-  .online{display:none;margin-top:14px;background:#fff;border-radius:12px;padding:13px;
-    border-top:4px solid #26324a;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .online{display:none;margin-top:14px;background:var(--row);border-radius:12px;padding:13px;
+    border-top:4px solid #33406e;box-shadow:inset 0 0 0 1px var(--line)}
   .online.show{display:block}
   .online .head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
   .online h3{margin:0;font-size:16px;line-height:1.2}
   .badge{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;
-    font-size:12px;font-weight:900;background:#e5e7eb;color:#4b5563;white-space:nowrap}
-  .badge.wait{background:#fff3c4;color:#8a5b00}
-  .badge.play{background:#d9f7e2;color:#19753a}
-  .badge.cut{background:#ffe0e0;color:#b42318}
+    font-size:12px;font-weight:900;background:#232c4a;color:#aab4d4;white-space:nowrap}
+  .badge.wait{background:#3a2f10;color:#ffd66b;box-shadow:0 0 10px rgba(255,214,107,.25)}
+  .badge.play{background:#0f3322;color:#5deda0;box-shadow:0 0 10px rgba(93,237,160,.3)}
+  .badge.cut{background:#3a1520;color:#ff8095;box-shadow:0 0 10px rgba(255,128,149,.3)}
   .online .roleline{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
-  .online .pill{border:1px solid #ece3cf;border-radius:10px;padding:8px 9px;font-size:12px;font-weight:800;background:#fffaf0}
+  .online .pill{border:1px solid var(--line);border-radius:10px;padding:8px 9px;font-size:12px;font-weight:800;background:#141b30;color:var(--muted)}
   .online .pill b{display:block;font-size:13px;margin-top:2px;color:var(--ink)}
   .online .minirow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
-  .online input{width:100%;border:1px solid #d8d1bf;border-radius:10px;padding:11px 10px;
-    font:inherit;font-weight:800;text-align:center;letter-spacing:2px}
+  .online input{width:100%;border:1px solid var(--line);border-radius:10px;padding:11px 10px;
+    font:inherit;font-weight:800;text-align:center;letter-spacing:2px;background:#0f1526;color:var(--ink)}
   .online .codebox{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;
-    border:1px solid #ece3cf;border-radius:12px;padding:10px;margin:8px 0;background:#f8fbff}
-  .online .code{font-weight:900;font-size:26px;letter-spacing:4px;color:#2440a8}
+    border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0;background:#0f1526}
+  .online .code{font-weight:900;font-size:26px;letter-spacing:4px;color:#7db4ff;text-shadow:0 0 12px var(--glow1)}
   .online .copy{padding:10px 12px;min-height:0}
   .online .ostatus{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+  .turn.p1turn .pin{animation:pinGlow1 1.8s ease-in-out infinite}
+  .turn.p2turn .pin{animation:pinGlow2 1.8s ease-in-out infinite}
+  @keyframes pinGlow1{0%,100%{box-shadow:0 0 4px var(--glow1)}50%{box-shadow:0 0 8px 2px var(--glow1),0 0 16px 4px rgba(77,163,255,.4)}}
+  @keyframes pinGlow2{0%,100%{box-shadow:0 0 4px var(--glow2)}50%{box-shadow:0 0 8px 2px var(--glow2),0 0 16px 4px rgba(255,77,109,.4)}}
+  .banner.show .panel2{animation:bannerIn .28s cubic-bezier(.2,1.2,.35,1)}
+  @keyframes bannerIn{0%{transform:scale(.85) translateY(10px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}
+  .online.show{animation:panelIn .22s ease-out}
+  @keyframes panelIn{0%{transform:translateY(-6px);opacity:0}100%{transform:translateY(0);opacity:1}}
+  .stone.sp1{filter:drop-shadow(0 0 6px var(--glow1)) drop-shadow(0 0 14px rgba(77,163,255,.35))}
+  .stone.sp2{filter:drop-shadow(0 0 6px var(--glow2)) drop-shadow(0 0 14px rgba(255,77,109,.32))}
   .territory.new{transform-box:fill-box;transform-origin:center;animation:territoryIn .22s ease-out}
   .stone.pop{transform-box:fill-box;transform-origin:center;animation:stonePop .16s ease-out}
   .preview{transform-box:fill-box;transform-origin:center;transition:transform .12s ease-out,opacity .12s ease-out}
@@ -81,25 +132,27 @@
   @keyframes stonePop{0%{transform:scale(0);opacity:.15}70%{transform:scale(1.12);opacity:1}100%{transform:scale(1);opacity:1}}
   @keyframes territoryIn{0%{transform:scale(.965);opacity:.08}100%{transform:scale(1);opacity:1}}
   @media (prefers-reduced-motion: reduce){
-    .territory.new,.stone.pop{animation:none!important}
-    .preview,.vhit.can{transition:none!important}
+    .territory.new,.stone.pop,.turn .pin,.banner.show .panel2,.online.show,
+    body::before,body::after{animation:none!important}
+    .preview,.vhit.can,button{transition:none!important}
   }
   .note{color:var(--muted);font-size:12px;margin-top:14px;line-height:1.6}
-  details{margin-top:12px;background:#fff;border-radius:12px;padding:2px 14px;font-size:13px;line-height:1.7}
+  details{margin-top:12px;background:var(--row);border-radius:12px;padding:2px 14px;font-size:13px;line-height:1.7;box-shadow:inset 0 0 0 1px var(--line)}
   details summary{cursor:pointer;font-weight:700;padding:9px 0}
   details ul{margin:2px 0 12px;padding-left:1.1em}
-  .banner{position:fixed;inset:0;background:rgba(20,24,31,.55);display:none;align-items:center;justify-content:center;z-index:9}
+  .banner{position:fixed;inset:0;background:rgba(4,6,12,.72);display:none;align-items:center;justify-content:center;z-index:9;backdrop-filter:blur(3px)}
   .banner.show{display:flex}
-  .banner .panel2{background:#fff;border-radius:18px;padding:24px 28px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.3);max-width:300px}
-  .banner .panel2 h2{margin:0 0 6px;font-size:24px}
+  .banner .panel2{background:#141b30;border-radius:18px;padding:24px 28px;text-align:center;
+    box-shadow:0 0 0 1px var(--line),0 8px 40px rgba(0,0,0,.6),0 0 30px rgba(77,163,255,.12),0 0 30px rgba(255,77,109,.1);max-width:300px}
+  .banner .panel2 h2{margin:0 0 6px;font-size:24px;text-shadow:0 0 18px currentColor}
   .banner .panel2 p{margin:6px 0;font-size:14px;color:var(--muted)}
-  .banner .panel2 button{margin-top:14px;background:var(--ink);color:#fff;width:100%}
+  .banner .panel2 button{margin-top:14px;background:linear-gradient(135deg,#26335c,#182342);color:#fff;width:100%}
   @media (max-width:760px){
     .wrap{display:grid;grid-template-columns:1fr;gap:10px;max-width:560px;
       padding:8px 8px max(18px,env(safe-area-inset-bottom))}
     .boardcol,.panelcol{width:100%;max-width:none;min-width:0;flex-basis:auto}
-    .boardbox{border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,.16)}
-    .panel{border-radius:12px;padding:12px;box-shadow:0 3px 10px rgba(0,0,0,.16)}
+    .boardbox{border-radius:10px;box-shadow:0 0 0 1px var(--line),0 8px 24px rgba(0,0,0,.5)}
+    .panel{border-radius:12px;padding:12px;box-shadow:0 0 0 1px var(--line),0 8px 24px rgba(0,0,0,.5)}
     .topline{text-align:left;font-size:12px;margin-bottom:8px}
     .turn{font-size:18px;margin:0 0 10px}
     .turn .pin{width:22px;height:22px;flex:0 0 22px}
@@ -307,18 +360,22 @@ function enclosedBy(X){
   const enc=[]; for(let f=0;f<NF;f++) if(!seen[f]) enc.push(f);
   return enc;
 }
-function computeOwners(){
+// 競合面(両者が同時に囲んでいる面)は「直前の所有者」が維持する。
+// 既に囲まれた領地は、相手が境界上の石で囲み直しても奪えない。
+// prev を渡すことで resolve は (直前状態, 石配置) の決定論的関数になる。
+function computeOwners(prev){
   const enc1=new Set(enclosedBy(1)), enc2=new Set(enclosedBy(2));
   const nextOwner=new Array(NF).fill(0);
   for(let f=0;f<NF;f++){
-    if(enc1.has(f)&&enc2.has(f)) nextOwner[f]=0;
+    if(enc1.has(f)&&enc2.has(f)) nextOwner[f]=prev?prev[f]:0;
     else if(enc1.has(f)) nextOwner[f]=1;
     else if(enc2.has(f)) nextOwner[f]=2;
   }
   return nextOwner;
 }
 function resolve(){
-  owner=computeOwners();
+  const prev=Array.isArray(owner)?owner.slice():null;
+  owner=computeOwners(prev);
   const removed=[];
   for(let v=0; v<NV; v++){
     if(stones[v]===0) continue;
@@ -327,7 +384,7 @@ function resolve(){
   }
   if(removed.length){
     for(const v of removed) stones[v]=0;
-    owner=computeOwners();
+    owner=computeOwners(prev);
   }
 }
 const countOf=p=>{let n=0;for(let f=0;f<NF;f++)if(owner[f]===p)n+=(BOARD.faces[f].area||1);return Math.round(n*100)/100;};
@@ -412,8 +469,14 @@ function render(){
   document.getElementById('c1').textContent=cornersUsed[1];
   document.getElementById('c2').textContent=cornersUsed[2];
   const pin=document.getElementById('turnpin'), txt=document.getElementById('turntxt');
+  const turnEl=document.getElementById('turn');
+  if(turnEl) turnEl.classList.remove('p1turn','p2turn');
   if(over){ pin.style.background='#bbb'; txt.textContent='ゲーム終了'; }
-  else{ pin.style.background=turn===1?'var(--p1)':'var(--p2)'; txt.textContent=COLname(turn)+'の手番'; }
+  else{
+    pin.style.background=turn===1?'var(--p1)':'var(--p2)';
+    txt.textContent=COLname(turn)+'の手番';
+    if(turnEl) turnEl.classList.add(turn===1?'p1turn':'p2turn');
+  }
   document.getElementById('undoBtn').disabled=onlineMode||hist.length===0;
   document.getElementById('passBtn').disabled=over||onlineMode;
   document.getElementById('judgeBtn').disabled=onlineMode;
@@ -429,11 +492,34 @@ function reduceMotion(){
 }
 function drawSVG(){
   let s=`<svg viewBox="0 0 ${IG.w} ${IG.h}" xmlns="http://www.w3.org/2000/svg">`;
-  s+=`<image href="${IMG}" x="0" y="0" width="${IG.w}" height="${IG.h}"/>`;
-  for(const [a,b] of ERASED_BOARD_LINES){
-    const ax=PX(V[a][0]), ay=PY(V[a][1]), bx=PX(V[b][0]), by=PY(V[b][1]);
-    const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy) || 1, inset=12;
-    s+=`<line x1="${ax+dx/len*inset}" y1="${ay+dy/len*inset}" x2="${bx-dx/len*inset}" y2="${by-dy/len*inset}" stroke="#d9e7fb" stroke-width="18" stroke-linecap="round"/>`;
+  s+=`<defs>`
+    +`<filter id="saber1" x="-60%" y="-60%" width="220%" height="220%">`
+      +`<feGaussianBlur stdDeviation="6" result="b"/>`
+      +`<feColorMatrix in="b" type="matrix" values="0 0 0 0 0.30  0 0 0 0 0.64  0 0 0 0 1  0 0 0 .9 0" result="g"/>`
+      +`<feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>`
+    +`</filter>`
+    +`<filter id="saber2" x="-60%" y="-60%" width="220%" height="220%">`
+      +`<feGaussianBlur stdDeviation="6" result="b"/>`
+      +`<feColorMatrix in="b" type="matrix" values="0 0 0 0 1  0 0 0 0 0.30  0 0 0 0 0.43  0 0 0 .9 0" result="g"/>`
+      +`<feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge>`
+    +`</filter>`
+    +`<filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">`
+      +`<feGaussianBlur stdDeviation="2.2" result="b"/>`
+      +`<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>`
+    +`</filter>`
+    +`<radialGradient id="boardBg" cx="50%" cy="42%" r="72%">`
+      +`<stop offset="0%" stop-color="#0d1730"/>`
+      +`<stop offset="60%" stop-color="#0a1120"/>`
+      +`<stop offset="100%" stop-color="#060a16"/>`
+    +`</radialGradient>`
+  +`</defs>`;
+  // 深宇宙の盤面パネル
+  s+=`<rect x="0" y="0" width="${IG.w}" height="${IG.h}" fill="url(#boardBg)"/>`;
+  // 盤の線（画像を使わず edges から直接描画。形はそのまま）
+  const linePts=(a,b)=>`x1="${PX(V[a][0])}" y1="${PY(V[a][1])}" x2="${PX(V[b][0])}" y2="${PY(V[b][1])}"`;
+  for(const [a,b] of BOARD.edges){
+    s+=`<line ${linePts(a,b)} stroke="#2f4a86" stroke-width="6" stroke-linecap="round" filter="url(#lineGlow)"/>`;
+    s+=`<line ${linePts(a,b)} stroke="#9fc0ff" stroke-width="2" stroke-linecap="round" opacity="0.75"/>`;
   }
   const newFaces=new Set(lastGainedFaces);
   const canAct=!onlineMode||onlineRole===turn;
@@ -446,12 +532,12 @@ function drawSVG(){
   for(let v=0; v<NV; v++){
     const cx=PX(V[v][0]),cy=PY(V[v][1]),corner=isCorner(v);
     if(stones[v]!==0){
-      const cls=`stone${v===lastPlacedVertex?' pop':''}`;
+      const cls=`stone sp${stones[v]}${v===lastPlacedVertex?' pop':''}`;
       const pop=animate&&v===lastPlacedVertex?'<animate attributeName="r" from="0" to="17" dur="0.15s" fill="freeze" calcMode="spline" keyTimes="0;1" keySplines="0.2 0 0 1"/>':'';
-      s+=`<circle class="${cls}" cx="${cx}" cy="${cy}" r="17" fill="${stones[v]===1?'var(--p1)':'var(--p2)'}" stroke="#fff" stroke-width="4">${pop}</circle>`;
+      s+=`<circle class="${cls}" filter="url(#saber${stones[v]})" cx="${cx}" cy="${cy}" r="17" fill="${stones[v]===1?'var(--p1)':'var(--p2)'}" stroke="#fff" stroke-width="4">${pop}</circle>`;
     } else {
-      if(corner) s+=`<circle cx="${cx}" cy="${cy}" r="11" fill="#fff" stroke="var(--gold)" stroke-width="4"/>`;
-      else s+=`<circle cx="${cx}" cy="${cy}" r="7" fill="#fff" stroke="#5a6172" stroke-width="2.5"/>`;
+      if(corner) s+=`<circle cx="${cx}" cy="${cy}" r="11" fill="#141c30" stroke="var(--gold)" stroke-width="4"/>`;
+      else s+=`<circle cx="${cx}" cy="${cy}" r="7" fill="#0e1526" stroke="#7d93c9" stroke-width="2.5"/>`;
       if(canPlace(v,turn)&&!over&&canAct) s+=`<circle class="preview" cx="${cx}" cy="${cy}" r="5" fill="${turn===1?'var(--p1)':'var(--p2)'}" opacity="0.5"/>`;
     }
     const active=canPlace(v,turn)&&!over&&canAct;
