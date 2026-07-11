@@ -360,22 +360,20 @@ function enclosedBy(X){
   const enc=[]; for(let f=0;f<NF;f++) if(!seen[f]) enc.push(f);
   return enc;
 }
-// 競合面(両者が同時に囲んでいる面)は「直前の所有者」が維持する。
-// 既に囲まれた領地は、相手が境界上の石で囲み直しても奪えない。
-// prev を渡すことで resolve は (直前状態, 石配置) の決定論的関数になる。
-function computeOwners(prev){
+// 競合面(両者が同時に囲んでいる面)は無所有にする。
+// owner や turn など過去状態に依存せず、現在の stones だけから決める。
+function computeOwners(){
   const enc1=new Set(enclosedBy(1)), enc2=new Set(enclosedBy(2));
   const nextOwner=new Array(NF).fill(0);
   for(let f=0;f<NF;f++){
-    if(enc1.has(f)&&enc2.has(f)) nextOwner[f]=prev?prev[f]:0;
+    if(enc1.has(f)&&enc2.has(f)) nextOwner[f]=0;
     else if(enc1.has(f)) nextOwner[f]=1;
     else if(enc2.has(f)) nextOwner[f]=2;
   }
   return nextOwner;
 }
 function resolve(){
-  const prev=Array.isArray(owner)?owner.slice():null;
-  owner=computeOwners(prev);
+  owner=computeOwners();
   const removed=[];
   for(let v=0; v<NV; v++){
     if(stones[v]===0) continue;
@@ -384,7 +382,7 @@ function resolve(){
   }
   if(removed.length){
     for(const v of removed) stones[v]=0;
-    owner=computeOwners(prev);
+    owner=computeOwners();
   }
 }
 const countOf=p=>{let n=0;for(let f=0;f<NF;f++)if(owner[f]===p)n+=(BOARD.faces[f].area||1);return Math.round(n*100)/100;};
