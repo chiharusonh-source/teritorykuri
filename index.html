@@ -189,7 +189,6 @@
     button{min-height:44px}
   }
 </style>
-<script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -294,7 +293,7 @@ for(const k of boundaryEdges){
 }
 
 let stones, owner, turn, cornersUsed, passCount, over, hist, lastWinReason, ply;
-let peer=null, conn=null, onlineMode=false, onlineRole=0, onlineRoomCode='';
+let socket=null, onlineMode=false, onlineActive=false, onlineRole=0, onlineRoomCode='';
 let lastPlacedVertex=null, lastGainedFaces=[];
 
 function init(){
@@ -424,6 +423,20 @@ const countOf=p=>owner.reduce((n,o)=>n+(o===p?1:0),0);
 const fmtScore=n=>Number.isInteger(n)?String(n):String(Number(n.toFixed(2)));
 
 function place(v, remote=false){
+  if(onlineMode&&!remote){
+    if(!onlineActive){setStatus('対戦相手の接続を待っています。'); render(); return;}
+    if(onlineRole!==turn){setStatus('相手の手番です。'); render(); return;}
+    if(!canPlace(v,turn)){
+      setStatus(stones[v]!==0?"そこには石があります":
+        (strictInteriorOwner(v)?"領地の内部には置けません":
+         (ply===0&&isCorner(v)?"先手の初手は角に置けません":
+          (isCorner(v)&&cornersUsed[turn]>=2?"角は2つまでです":"そこには置けません"))));
+      render(); return;
+    }
+    sendOnline({type:'move',vertex:v});
+    setStatus('サーバーの判定を待っています。');
+    return;
+  }
   if(onlineMode&&!remote&&onlineRole!==turn){
     setStatus('相手の手番です。');
     render(); return;
@@ -454,7 +467,6 @@ function place(v, remote=false){
   if(!remote&&typeof navigator!=='undefined'&&navigator.vibrate){
     try{navigator.vibrate(10);}catch(e){}
   }
-  if(onlineMode&&!remote) sendOnline({type:'move',v});
   const w=checkWin();
   if(w){ over=true; render(); win(w,"相手の初期領地をすべて奪いました！"); return; }
   const movedPlayer=turn;
@@ -478,6 +490,10 @@ function checkWin(){
 }
 function doPass(){
   if(over) return;
+  if(onlineMode){
+    setStatus('オンライン対戦ではサーバーが合法手と自動パスを判定します。');
+    render(); return;
+  }
   const moves=legalMovesFor(turn);
   if(moves.length){
     setStatus(`任意パスはありません。${COLname(turn)}は${moves.length}か所に置けます。`);
@@ -500,6 +516,10 @@ function endByScore(){
   else win(0,`引き分け（${fmtScore(c)} 対 ${fmtScore(a)}）`);
 }
 function judge(){
+  if(onlineMode){
+    setStatus(`サーバー判定: 赤 ${fmtScore(countOf(2))}面・青 ${fmtScore(countOf(1))}面。`);
+    render(); return;
+  }
   const moves=legalMovesFor(turn);
   if(moves.length){
     setStatus(`現在の点数: 赤 ${fmtScore(countOf(2))}面・青 ${fmtScore(countOf(1))}面。${COLname(turn)}は${moves.length}か所に置けます。`);
@@ -534,7 +554,7 @@ function render(){
   document.getElementById('judgeBtn').disabled=onlineMode;
   document.getElementById('resetBtn').disabled=onlineMode;
   const boardBox=document.querySelector('.boardbox');
-  if(boardBox) boardBox.classList.toggle('locked', onlineMode&&!over&&onlineRole!==turn);
+  if(boardBox) boardBox.classList.toggle('locked', onlineMode&&!over&&(!onlineActive||onlineRole!==turn));
   updateOnlineInfo();
   drawSVG();
 }
@@ -574,7 +594,7 @@ function drawSVG(){
     s+=`<line ${linePts(a,b)} stroke="#9fc0ff" stroke-width="2" stroke-linecap="round" opacity="0.75"/>`;
   }
   const newFaces=new Set(lastGainedFaces);
-  const canAct=!onlineMode||onlineRole===turn;
+  const canAct=!onlineMode||(onlineActive&&onlineRole===turn);
   const animate=!reduceMotion();
   for(let f=0;f<NF;f++) if(owner[f]){
     const cls=`territory${newFaces.has(f)?' new':''}`;
@@ -623,8 +643,6 @@ function win(p,sub){
   document.getElementById('bSub').textContent=sub;
   document.getElementById('banner').classList.add('show');
 }
-function roomPeerId(code){return `teritorykuri-${code}`;}
-function makeRoomCode(){return String(Math.floor(100000+Math.random()*900000));}
 function setOnlineState(label){
   const el=document.getElementById('onlineState');
   el.textContent=label;
@@ -632,10 +650,17 @@ function setOnlineState(label){
 }
 function setOnlineStatus(text){document.getElementById('onlineStatus').textContent=text;}
 function showOnlinePanel(){document.getElementById('onlinePanel').classList.toggle('show');}
-function sendOnline(msg){if(conn&&conn.open) conn.send(msg);}
+function websocketUrl(){
+  if(typeof window!=='undefined'&&window.TERRITORY_WS_URL) return window.TERRITORY_WS_URL;
+  if(location.protocol==='file:') return 'ws://localhost:8080/ws';
+  return `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`;
+}
+function sendOnline(msg){
+  if(socket&&socket.readyState===WebSocket.OPEN) socket.send(JSON.stringify(msg));
+}
 function updateOnlineInfo(){
   document.getElementById('onlineRoleText').textContent=!onlineMode?'ローカル対戦':(onlineRole===1?'青（ホスト）':'赤（ゲスト）');
-  document.getElementById('onlineTurnText').textContent=over?'ゲーム終了':(onlineMode?(onlineRole===turn?'あなたの手番':`${COLname(turn)}の手番（相手）`):`${COLname(turn)}の手番`);
+  document.getElementById('onlineTurnText').textContent=over?'ゲーム終了':(onlineMode?(onlineActive?(onlineRole===turn?'あなたの手番':`${COLname(turn)}の手番（相手）`):'対戦相手を待機中'):`${COLname(turn)}の手番`);
 }
 async function copyRoomCode(){
   const code=document.getElementById('onlineCode').textContent.trim();
@@ -656,52 +681,88 @@ async function copyRoomCode(){
     setOnlineStatus(`招待コード: ${code}`);
   }
 }
-function startOnlineGame(role){
-  onlineMode=true; onlineRole=role; init(); turn=1; passCount=0; hist=[]; render();
-  setOnlineState('対戦中');
-  setOnlineStatus(role===1?'対戦中。あなたは青です。':'対戦中。あなたは赤です。');
+function applyServerState(state,animate=true){
+  if(!state||!Array.isArray(state.stones)||!Array.isArray(state.owners)) return;
+  const previousStones=stones.slice();
+  const previousOwner=owner.slice();
+  stones=state.stones.slice(); owner=state.owners.slice(); turn=state.turn;
+  cornersUsed={1:Number(state.cornersUsed?.['1']||0),2:Number(state.cornersUsed?.['2']||0)};
+  ply=Number(state.ply||0); over=Boolean(state.over); passCount=0; hist=[];
+  lastPlacedVertex=null; lastGainedFaces=[];
+  if(animate){
+    for(let v=0;v<NV;v++) if(previousStones[v]===0&&stones[v]!==0){lastPlacedVertex=v;break;}
+    for(let f=0;f<NF;f++) if(previousOwner[f]!==owner[f]&&owner[f]!==0) lastGainedFaces.push(f);
+  }
+  setStatus(state.status||''); render();
+  if(over&&!document.getElementById('banner').classList.contains('show')){
+    win(Number(state.winner||0),state.winReason||'対局が終了しました。');
+  }
+}
+function handleOnlineMessage(msg){
+  if(!msg||typeof msg!=='object') return;
+  if(msg.type==='created'){
+    onlineMode=true; onlineActive=false; onlineRole=1; onlineRoomCode=msg.code;
+    document.getElementById('onlineCode').textContent=msg.code;
+    applyServerState(msg.state,false);
+    setOnlineState('待機中'); setOnlineStatus('相手に招待コードを伝えてください。');
+  }else if(msg.type==='started'){
+    onlineMode=true; onlineActive=true; onlineRole=Number(msg.role); onlineRoomCode=msg.code;
+    document.getElementById('onlineCode').textContent=msg.code;
+    document.getElementById('banner').classList.remove('show');
+    applyServerState(msg.state,false);
+    setOnlineState('対戦中'); setOnlineStatus(onlineRole===1?'対戦中。あなたは青です。':'対戦中。あなたは赤です。');
+  }else if(msg.type==='state'){
+    applyServerState(msg.state,true);
+    setOnlineState(over?'対戦終了':'対戦中');
+  }else if(msg.type==='error'){
+    setOnlineStatus(msg.message||'通信エラーが発生しました。');
+    setStatus(msg.message||'操作を完了できませんでした。'); render();
+  }else if(msg.type==='disconnected'){
+    onlineMode=false; onlineActive=false;
+    setOnlineState('切断'); setOnlineStatus(msg.message||'相手との接続が切れました。'); render();
+  }
   updateOnlineInfo();
 }
-function bindConnection(c, role){
-  conn=c;
-  conn.on('data',msg=>{
-    if(!msg||typeof msg!=='object') return;
-    if(msg.type==='start') startOnlineGame(2);
-    if(msg.type==='move') place(msg.v,true);
+function connectOnline(onOpen){
+  closeOnline();
+  onlineMode=true; onlineActive=false;
+  setOnlineState('待機中'); setOnlineStatus('Javaサーバーに接続しています。');
+  const current=new WebSocket(websocketUrl());
+  socket=current;
+  current.addEventListener('open',()=>{if(socket===current) onOpen();});
+  current.addEventListener('message',event=>{
+    if(socket!==current) return;
+    try{handleOnlineMessage(JSON.parse(event.data));}
+    catch(e){setOnlineStatus('サーバーからの応答を読み取れませんでした。');}
   });
-  conn.on('close',()=>{onlineMode=false; setOnlineState('切断'); setOnlineStatus('切断されました。ローカルでは続けられます。'); render();});
-  conn.on('error',()=>{onlineMode=false; setOnlineState('切断'); setOnlineStatus('通信エラーで切断されました。'); render();});
-  conn.on('open',()=>{
-    if(role===1){startOnlineGame(1); sendOnline({type:'start'});}
-    else{setOnlineState('待機中'); setOnlineStatus('ホストの開始を待っています。');}
+  current.addEventListener('close',()=>{
+    if(socket!==current) return;
+    socket=null;
+    if(onlineMode){onlineMode=false;onlineActive=false;setOnlineState('切断');setOnlineStatus('Javaサーバーとの接続が切れました。');render();}
+  });
+  current.addEventListener('error',()=>{
+    if(socket===current){setOnlineState('切断');setOnlineStatus('Javaサーバーに接続できませんでした。');}
   });
 }
 function closeOnline(){
-  onlineMode=false; onlineRole=0; onlineRoomCode='';
-  if(conn){try{conn.close();}catch(e){} conn=null;}
-  if(peer){try{peer.destroy();}catch(e){} peer=null;}
+  const current=socket; socket=null;
+  if(current){
+    try{if(current.readyState===WebSocket.OPEN) current.send(JSON.stringify({type:'disconnect'}));}catch(e){}
+    try{current.close();}catch(e){}
+  }
+  onlineMode=false; onlineActive=false; onlineRole=0; onlineRoomCode='';
   document.getElementById('onlineCode').textContent='------';
   setOnlineState('未接続'); setOnlineStatus('未接続。オフラインでは従来どおり遊べます。');
   render();
 }
 function createRoom(){
-  if(typeof Peer==='undefined'){setOnlineStatus('PeerJSを読み込めませんでした。ネットワークを確認してください。'); return;}
-  closeOnline(); onlineRoomCode=makeRoomCode();
-  document.getElementById('onlineCode').textContent=onlineRoomCode;
-  setOnlineState('待機中'); setOnlineStatus('相手に招待コードを伝えてください。');
-  peer=new Peer(roomPeerId(onlineRoomCode));
-  peer.on('connection',c=>bindConnection(c,1));
-  peer.on('error',()=>{setOnlineState('切断'); setOnlineStatus('部屋を作れませんでした。もう一度試してください。');});
+  connectOnline(()=>sendOnline({type:'create'}));
 }
 function joinRoom(){
-  if(typeof Peer==='undefined'){setOnlineStatus('PeerJSを読み込めませんでした。ネットワークを確認してください。'); return;}
   const code=document.getElementById('joinCode').value.replace(/\D/g,'').slice(0,6);
   if(code.length!==6){setOnlineStatus('6桁の招待コードを入力してください。'); return;}
-  closeOnline(); onlineRoomCode=code; document.getElementById('onlineCode').textContent=code;
-  setOnlineState('待機中'); setOnlineStatus('接続しています。');
-  peer=new Peer();
-  peer.on('open',()=>bindConnection(peer.connect(roomPeerId(code),{reliable:true}),2));
-  peer.on('error',()=>{setOnlineState('切断'); setOnlineStatus('接続できませんでした。コードを確認してください。');});
+  onlineRoomCode=code; document.getElementById('onlineCode').textContent=code;
+  connectOnline(()=>sendOnline({type:'join',code}));
 }
 document.getElementById('passBtn').addEventListener('click',doPass);
 document.getElementById('undoBtn').addEventListener('click',undo);

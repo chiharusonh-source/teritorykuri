@@ -1,26 +1,36 @@
 # 陣取りゲーム ― くりやま盤
 
-このフォルダは、そのまま静的Webサイトとして公開できます。
+Spring Bootを対局サーバーにしたWeb版です。画面とローカル対戦は`index.html`、オンライン対戦の盤面状態・合法手・領地・勝敗はJavaサーバーが管理します。
 
-## ファイル
+## 必要環境
 
-- `index.html`: ゲーム本体です。画像とJavaScriptを埋め込んだ単体HTMLなので、追加アセットなしで動きます。
-- `.nojekyll`: GitHub Pagesで余計な処理を避けるための空ファイルです。
-- `netlify.toml`: Netlifyでこのフォルダを公開するための最小設定です。
+- Java 21
+- Maven 3.6.3以上
 
-## おすすめ公開方法
+## ローカル起動
 
-1. Netlify Drop
-   - `territory-game-site` フォルダを Netlify Drop にドラッグ&ドロップします。
+```powershell
+mvn spring-boot:run
+```
 
-2. GitHub Pages
-   - このフォルダの中身をリポジトリに置き、Pages の公開元にします。
-   - 公開トップは `index.html` です。
+起動後に `http://localhost:8080/` をブラウザ2窓で開き、一方で部屋を作り、もう一方から6桁コードで参加します。
 
-3. Vercel
-   - Framework Preset は `Other` を選びます。
-   - Build Command は空欄、Output Directory は `.` で公開できます。
+## テスト
 
-## ローカル確認
+```powershell
+mvn test
+```
 
-ブラウザで `index.html` を直接開いて動作確認できます。
+## 構成
+
+- `index.html`: SVG盤面、操作UI、ローカル対戦、WebSocketクライアント
+- `GameEngine.java`: 合法手、壁、閉路、領地、石除去、勝敗
+- `RoomService.java`: 6桁招待コードと1対1の部屋管理
+- `GameWebSocketHandler.java`: ブラウザとJavaサーバー間の通信
+- `Dockerfile`: Java対応ホスティング向けコンテナ
+
+## 公開
+
+この版のオンライン対戦には常時動作するJavaプロセスとWebSocketが必要です。静的ファイルだけを配信するGitHub Pagesや従来のVercel設定では、ローカル対戦のみ動作します。
+
+公開先ではリポジトリの`Dockerfile`をビルドし、外部ポートを環境変数`PORT`へ割り当ててください。Spring Bootが`index.html`も配信するため、フロントとJavaサーバーを同じURLで公開できます。
