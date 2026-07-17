@@ -18,3 +18,11 @@ jobs:
           cache: maven
       - name: Run tests
         run: mvn --batch-mode test
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build online game image
+        run: docker build --tag territory-game:${{ github.sha }} .
