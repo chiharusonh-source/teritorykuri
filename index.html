@@ -199,11 +199,11 @@
       <summary>ルール</summary>
       <ul>
         <li><b>図形＝点を線で結んで囲む</b>：自分の石（点）どうしを盤の直線に沿って結び、閉じた多角形を作ると内側が領地になります。四角形なら頂点4点でよく、辺の途中の交点に石は不要です。</li>
-        <li><b>大きさ＝図形の面分</b>：囲んだ内側の面積を盤面の図形単位で数えます。大きい面はその分だけ多く数え、境界線（辺）自体は数に含みません。</li>
-        <li><b>置けない所</b>：相手の石がある点には置けません。相手領地の内部（接する面が全て相手）にも置けません。境界線上には置けます。</li>
-        <li><b>効力消失</b>：相手に内部へ取り込まれた石は取り除かれます（境界上なら残る）。</li>
-        <li><b>角</b>：四隅は各プレイヤー2つまで。</li>
-        <li><b>勝敗</b>：相手の初期領地を全て奪えば勝ち。両者パスで止まれば図形数の多い方が勝ち。</li>
+        <li><b>大きさ＝面数</b>：囲んだ内側にある最小面の数を点数にします。面積の大小は点数に含みません。</li>
+        <li><b>置けない所</b>：石がある点、または現在の領地の厳密な内部には置けません。境界線上には置けます。</li>
+        <li><b>効力消失</b>：領地の厳密な内部へ取り込まれた石は、自分の石でも相手の石でも取り除かれます（境界上なら残る）。</li>
+        <li><b>角</b>：四隅は各プレイヤー2つまで。先手の初手は四隅に置けません。</li>
+        <li><b>勝敗</b>：相手の初期領地を全て奪えば勝ち。置ける手がない場合は自動で手番を渡し、両者とも置けなければ面数の多い方が勝ち。</li>
       </ul>
     </details>
   </div>
@@ -218,7 +218,7 @@
       <div class="status" id="status"></div>
       <hr>
       <div class="btns">
-        <button class="dark" id="passBtn">パス</button>
+        <button class="dark" id="passBtn">合法手確認</button>
         <button id="undoBtn">戻す</button>
         <button id="resetBtn">リセット</button>
         <button id="judgeBtn">判定更新</button>
@@ -287,8 +287,13 @@ for(let f=0; f<NF; f++){
   faceEdges.push(es);
 }
 const boundaryEdges=Object.keys(edgeFaces).filter(k=>edgeFaces[k].length===1);
+const boundaryVertices=new Set();
+for(const k of boundaryEdges){
+  const [a,b]=k.split('_').map(Number);
+  boundaryVertices.add(a); boundaryVertices.add(b);
+}
 
-let stones, owner, turn, cornersUsed, passCount, over, hist, lastWinReason;
+let stones, owner, turn, cornersUsed, passCount, over, hist, lastWinReason, ply;
 let peer=null, conn=null, onlineMode=false, onlineRole=0, onlineRoomCode='';
 let lastPlacedVertex=null, lastGainedFaces=[];
 
@@ -298,19 +303,25 @@ function init(){
   for(const f of BOARD.p2home) owner[f]=2;
   for(const v of BOARD.p1stones) if(v!=null) stones[v]=1;
   for(const v of BOARD.p2stones) if(v!=null) stones[v]=2;
-  turn=2; cornersUsed={1:0,2:0}; passCount=0; over=false; hist=[]; lastWinReason=null;
+  turn=2; cornersUsed={1:0,2:0}; passCount=0; over=false; hist=[]; lastWinReason=null; ply=0;
   lastPlacedVertex=null; lastGainedFaces=[];
-  resolve(); setStatus(''); render();
+  setStatus(''); render();
 }
-const snap=()=>JSON.stringify({s:stones,o:owner,t:turn,c:cornersUsed,p:passCount,ov:over,w:lastWinReason});
+const snap=()=>JSON.stringify({s:stones,o:owner,t:turn,c:cornersUsed,p:passCount,ov:over,w:lastWinReason,y:ply});
 function pushH(){hist.push(snap()); if(hist.length>300)hist.shift();}
-function restore(j){const d=JSON.parse(j);stones=d.s;owner=d.o;turn=d.t;cornersUsed=d.c;passCount=d.p;over=d.ov;lastWinReason=d.w||null;lastPlacedVertex=null;lastGainedFaces=[];}
+function restore(j){const d=JSON.parse(j);stones=d.s;owner=d.o;turn=d.t;cornersUsed=d.c;passCount=d.p;over=d.ov;lastWinReason=d.w||null;ply=d.y||0;lastPlacedVertex=null;lastGainedFaces=[];}
 
 const isCorner=v=>BOARD.corners.includes(v);
-function enemyInterior(v,p){const e=3-p,fs=inc(v);return fs.length>0&&fs.every(f=>owner[f]===e);}
+function strictInteriorOwner(v){
+  const fs=inc(v);
+  if(!fs.length||boundaryVertices.has(v)) return 0;
+  const p=owner[fs[0]];
+  return p&&fs.every(f=>owner[f]===p)?p:0;
+}
 function canPlace(v,p){
   if(over||stones[v]!==0) return false;     // occupied (incl. enemy point) => no
-  if(enemyInterior(v,p)) return false;
+  if(strictInteriorOwner(v)) return false;
+  if(ply===0&&isCorner(v)) return false;
   if(isCorner(v)&&cornersUsed[p]>=2) return false;
   return true;
 }
@@ -360,32 +371,56 @@ function enclosedBy(X){
   const enc=[]; for(let f=0;f<NF;f++) if(!seen[f]) enc.push(f);
   return enc;
 }
-// 競合面(両者が同時に囲んでいる面)は無所有にする。
-// owner や turn など過去状態に依存せず、現在の stones だけから決める。
-function computeOwners(){
-  const enc1=new Set(enclosedBy(1)), enc2=new Set(enclosedBy(2));
-  const nextOwner=new Array(NF).fill(0);
-  for(let f=0;f<NF;f++){
-    if(enc1.has(f)&&enc2.has(f)) nextOwner[f]=0;
-    else if(enc1.has(f)) nextOwner[f]=1;
-    else if(enc2.has(f)) nextOwner[f]=2;
-  }
-  return nextOwner;
+function recountCorners(){
+  cornersUsed={1:0,2:0};
+  for(const v of BOARD.corners) if(stones[v]) cornersUsed[stones[v]]++;
 }
-function resolve(){
-  owner=computeOwners();
+function cleanupInteriorStones(){
   const removed=[];
   for(let v=0; v<NV; v++){
     if(stones[v]===0) continue;
-    const e=3-stones[v], fs=inc(v);
-    if(fs.length && fs.every(f=>owner[f]===e)) removed.push(v);
+    if(strictInteriorOwner(v)) removed.push(v);
   }
   if(removed.length){
     for(const v of removed) stones[v]=0;
-    owner=computeOwners();
+    recountCorners();
   }
+  return removed;
 }
-const countOf=p=>{let n=0;for(let f=0;f<NF;f++)if(owner[f]===p)n+=(BOARD.faces[f].area||1);return Math.round(n*100)/100;};
+function resolve(){
+  return cleanupInteriorStones();
+}
+function captureCompletedFaces(p,beforeEnc){
+  const afterEnc=new Set(enclosedBy(p));
+  let hasNew=false;
+  for(const f of afterEnc) if(!beforeEnc.has(f)){hasNew=true; break;}
+  if(!hasNew) return [];
+  const captured=[];
+  for(const f of afterEnc){
+    if(owner[f]!==p) captured.push(f);
+    owner[f]=p;
+  }
+  return captured;
+}
+function legalMovesFor(p){
+  const moves=[];
+  for(let v=0; v<NV; v++) if(canPlace(v,p)) moves.push(v);
+  return moves;
+}
+function advanceTurnAfterMove(){
+  const current=turn, next=3-turn;
+  if(legalMovesFor(next).length){
+    turn=next; passCount=0;
+    return '';
+  }
+  if(legalMovesFor(current).length){
+    passCount=1;
+    return `${COLname(next)}は置ける点がないため、自動で手番を渡しました。`;
+  }
+  endByScore();
+  return null;
+}
+const countOf=p=>owner.reduce((n,o)=>n+(o===p?1:0),0);
 const fmtScore=n=>Number.isInteger(n)?String(n):String(Number(n.toFixed(2)));
 
 function place(v, remote=false){
@@ -399,15 +434,19 @@ function place(v, remote=false){
   }
   if(!canPlace(v,turn)){
     setStatus(stones[v]!==0?"そこには石があります":
-      (enemyInterior(v,turn)?"相手領地の内部には置けません":
-       (isCorner(v)&&cornersUsed[turn]>=2?"角は2つまでです":"そこには置けません")));
+      (strictInteriorOwner(v)?"領地の内部には置けません":
+       (ply===0&&isCorner(v)?"先手の初手は角に置けません":
+        (isCorner(v)&&cornersUsed[turn]>=2?"角は2つまでです":"そこには置けません"))));
     render(); return;
   }
   pushH();
   const before=countOf(turn);
   const beforeOwner=owner.slice();
+  const beforeEnc=new Set(enclosedBy(turn));
   stones[v]=turn; if(isCorner(v)) cornersUsed[turn]++;
-  resolve(); passCount=0;
+  ply++;
+  captureCompletedFaces(turn,beforeEnc);
+  cleanupInteriorStones();
   const gained=countOf(turn)-before;
   lastPlacedVertex=v;
   lastGainedFaces=[];
@@ -418,8 +457,12 @@ function place(v, remote=false){
   if(onlineMode&&!remote) sendOnline({type:'move',v});
   const w=checkWin();
   if(w){ over=true; render(); win(w,"相手の初期領地をすべて奪いました！"); return; }
-  setStatus(gained>0?`${COLname(turn)}が${fmtScore(gained)}面分を領地にしました。`:`${COLname(turn)}が石を置きました。`);
-  turn=3-turn; render();
+  const movedPlayer=turn;
+  const extra=advanceTurnAfterMove();
+  if(extra===null) return;
+  const base=gained>0?`${COLname(movedPlayer)}が${fmtScore(gained)}面を領地にしました。`:`${COLname(movedPlayer)}が石を置きました。`;
+  setStatus(extra?`${base} ${extra}`:base);
+  render();
 }
 function checkWin(){
   lastWinReason=null;
@@ -435,11 +478,19 @@ function checkWin(){
 }
 function doPass(){
   if(over) return;
-  if(onlineMode){ setStatus('オンライン中はパスできません。'); return; }
-  pushH(); passCount++;
-  if(passCount>=2){ endByScore(); return; }
-  setStatus(`${COLname(turn)}がパスしました。`);
-  turn=3-turn; render();
+  const moves=legalMovesFor(turn);
+  if(moves.length){
+    setStatus(`任意パスはありません。${COLname(turn)}は${moves.length}か所に置けます。`);
+    render(); return;
+  }
+  const other=3-turn;
+  if(legalMovesFor(other).length){
+    pushH();
+    turn=other; passCount=1;
+    setStatus(`${COLname(3-turn)}は置ける点がないため、自動で手番を渡しました。`);
+    render(); return;
+  }
+  endByScore();
 }
 function endByScore(){
   lastWinReason=null;
@@ -449,9 +500,12 @@ function endByScore(){
   else win(0,`引き分け（${fmtScore(c)} 対 ${fmtScore(a)}）`);
 }
 function judge(){
-  if(onlineMode){ setStatus('オンライン中は判定更新を使えません。'); return; }
-  resolve(); render();
-  setStatus(`判定を更新しました（赤 ${fmtScore(countOf(2))}面分・青 ${fmtScore(countOf(1))}面分）。`);
+  const moves=legalMovesFor(turn);
+  if(moves.length){
+    setStatus(`現在の点数: 赤 ${fmtScore(countOf(2))}面・青 ${fmtScore(countOf(1))}面。${COLname(turn)}は${moves.length}か所に置けます。`);
+    render(); return;
+  }
+  doPass();
 }
 function undo(){
   if(onlineMode){ setStatus('オンライン中は戻せません。'); return; }
