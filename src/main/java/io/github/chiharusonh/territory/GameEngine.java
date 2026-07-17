@@ -12,6 +12,8 @@ import java.util.Set;
 import static io.github.chiharusonh.territory.Board.Edge;
 
 final class GameEngine {
+    private static final double EPSILON = 1.0e-9;
+
     record MoveResult(boolean accepted, String message) {
         static MoveResult accepted(String message) {
             return new MoveResult(true, message);
@@ -35,14 +37,13 @@ final class GameEngine {
         }
 
         int beforeScore = countOf(state, player);
-        Set<Integer> beforeEnclosed = enclosedBy(state, player);
         state.stones[vertex] = player;
         if (Board.CORNERS.contains(vertex)) {
             state.cornersUsed[player]++;
         }
         state.ply++;
 
-        captureCompletedFaces(state, player, beforeEnclosed);
+        captureCompletedFaces(state, player, vertex);
         cleanupInteriorStones(state);
 
         int winner = homeWinner(state);
@@ -90,7 +91,19 @@ final class GameEngine {
         return count;
     }
 
-    Set<Edge> wallEdges(GameState state, int player) {
+    Set<Integer> completedFaces(GameState state, int player, int placedVertex) {
+        Set<Edge> wall = prunedWallEdges(state, player);
+        Set<Integer> enclosed = enclosedFaces(wall);
+        Set<Integer> captured = new HashSet<>();
+        for (Set<Integer> component : enclosedComponents(enclosed)) {
+            if (hasValidBoundary(state, player, placedVertex, component)) {
+                captured.addAll(component);
+            }
+        }
+        return captured;
+    }
+
+    private Set<Edge> wallEdges(GameState state, int player) {
         Set<Edge> wall = new HashSet<>();
         for (int[] rail : Board.RAILS) {
             int first = -1;
@@ -112,14 +125,13 @@ final class GameEngine {
         return wall;
     }
 
-    Set<Edge> prunedWallEdges(GameState state, int player) {
+    private Set<Edge> prunedWallEdges(GameState state, int player) {
         Set<Edge> wall = new HashSet<>(wallEdges(state, player));
         Map<Integer, List<Edge>> incident = new HashMap<>();
         for (Edge edge : wall) {
             incident.computeIfAbsent(edge.a(), ignored -> new ArrayList<>()).add(edge);
             incident.computeIfAbsent(edge.b(), ignored -> new ArrayList<>()).add(edge);
         }
-
         boolean changed;
         do {
             changed = false;
@@ -140,21 +152,18 @@ final class GameEngine {
         return wall;
     }
 
-    Set<Integer> enclosedBy(GameState state, int player) {
-        Set<Edge> wall = prunedWallEdges(state, player);
+    private Set<Integer> enclosedFaces(Set<Edge> wall) {
         boolean[] seen = new boolean[Board.FACES.length];
         ArrayDeque<Integer> queue = new ArrayDeque<>();
-
-        for (Edge boundary : Board.BOUNDARY_EDGES) {
-            if (!wall.contains(boundary)) {
-                int face = Board.EDGE_FACES.get(boundary).getFirst();
+        for (Edge edge : Board.BOUNDARY_EDGES) {
+            if (!wall.contains(edge)) {
+                int face = Board.EDGE_FACES.get(edge).getFirst();
                 if (!seen[face]) {
                     seen[face] = true;
                     queue.add(face);
                 }
             }
         }
-
         while (!queue.isEmpty()) {
             int face = queue.removeFirst();
             for (Edge edge : Board.FACE_EDGES.get(face)) {
@@ -169,7 +178,6 @@ final class GameEngine {
                 }
             }
         }
-
         Set<Integer> enclosed = new HashSet<>();
         for (int face = 0; face < seen.length; face++) {
             if (!seen[face]) {
@@ -177,6 +185,78 @@ final class GameEngine {
             }
         }
         return enclosed;
+    }
+
+    private List<Set<Integer>> enclosedComponents(Set<Integer> enclosed) {
+        List<Set<Integer>> components = new ArrayList<>();
+        Set<Integer> unvisited = new HashSet<>(enclosed);
+        while (!unvisited.isEmpty()) {
+            int start = unvisited.iterator().next();
+            Set<Integer> component = new HashSet<>();
+            ArrayDeque<Integer> queue = new ArrayDeque<>();
+            unvisited.remove(start);
+            queue.add(start);
+            while (!queue.isEmpty()) {
+                int face = queue.removeFirst();
+                component.add(face);
+                for (Edge edge : Board.FACE_EDGES.get(face)) {
+                    for (int neighbor : Board.EDGE_FACES.get(edge)) {
+                        if (unvisited.remove(neighbor)) {
+                            queue.add(neighbor);
+                        }
+                    }
+                }
+            }
+            components.add(component);
+        }
+        return components;
+    }
+
+    private boolean hasValidBoundary(GameState state, int player, int placedVertex, Set<Integer> component) {
+        Map<Edge, Integer> edgeCounts = new HashMap<>();
+        for (int face : component) {
+            for (Edge edge : Board.FACE_EDGES.get(face)) {
+                edgeCounts.merge(edge, 1, Integer::sum);
+            }
+        }
+        Map<Integer, List<Edge>> boundaryAt = new HashMap<>();
+        edgeCounts.forEach((edge, count) -> {
+            if (count == 1) {
+                boundaryAt.computeIfAbsent(edge.a(), ignored -> new ArrayList<>()).add(edge);
+                boundaryAt.computeIfAbsent(edge.b(), ignored -> new ArrayList<>()).add(edge);
+            }
+        });
+
+        Set<Integer> requiredCorners = new HashSet<>();
+        for (Map.Entry<Integer, List<Edge>> entry : boundaryAt.entrySet()) {
+            int vertex = entry.getKey();
+            List<Edge> edges = entry.getValue();
+            if (edges.size() != 2) {
+                return false;
+            }
+            int previous = other(edges.get(0), vertex);
+            int next = other(edges.get(1), vertex);
+            if (!isStraight(previous, vertex, next)) {
+                requiredCorners.add(vertex);
+            }
+        }
+        return requiredCorners.size() >= 3
+                && requiredCorners.contains(placedVertex)
+                && requiredCorners.stream().allMatch(vertex -> state.stones[vertex] == player);
+    }
+
+    private int other(Edge edge, int vertex) {
+        return edge.a() == vertex ? edge.b() : edge.a();
+    }
+
+    private boolean isStraight(int previous, int vertex, int next) {
+        double ax = Board.VERTICES[previous][0] - Board.VERTICES[vertex][0];
+        double ay = Board.VERTICES[previous][1] - Board.VERTICES[vertex][1];
+        double bx = Board.VERTICES[next][0] - Board.VERTICES[vertex][0];
+        double by = Board.VERTICES[next][1] - Board.VERTICES[vertex][1];
+        double cross = ax * by - ay * bx;
+        double dot = ax * bx + ay * by;
+        return Math.abs(cross) <= EPSILON && dot < 0;
     }
 
     private String illegalReason(GameState state, int vertex, int player) {
@@ -218,13 +298,8 @@ final class GameEngine {
         return owner;
     }
 
-    private void captureCompletedFaces(GameState state, int player, Set<Integer> beforeEnclosed) {
-        Set<Integer> afterEnclosed = enclosedBy(state, player);
-        boolean hasNewFace = afterEnclosed.stream().anyMatch(face -> !beforeEnclosed.contains(face));
-        if (!hasNewFace) {
-            return;
-        }
-        for (int face : afterEnclosed) {
+    private void captureCompletedFaces(GameState state, int player, int placedVertex) {
+        for (int face : completedFaces(state, player, placedVertex)) {
             state.owners[face] = player;
         }
     }

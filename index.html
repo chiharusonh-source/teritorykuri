@@ -197,7 +197,7 @@
     <details>
       <summary>ルール</summary>
       <ul>
-        <li><b>図形＝点を線で結んで囲む</b>：自分の石（点）どうしを盤の直線に沿って結び、閉じた多角形を作ると内側が領地になります。四角形なら頂点4点でよく、辺の途中の交点に石は不要です。</li>
+        <li><b>図形＝点を線で結んで囲む</b>：自分の石（点）どうしを盤の直線に沿って結び、閉じた多角形を作ると内側が領地になります。曲がる交点には必ず自分の石が必要です。直線途中なら石は不要で、相手石があっても線は切れません。</li>
         <li><b>大きさ＝面数</b>：囲んだ内側にある最小面の数を点数にします。面積の大小は点数に含みません。</li>
         <li><b>置けない所</b>：石がある点、または現在の領地の厳密な内部には置けません。境界線上には置けます。</li>
         <li><b>効力消失</b>：領地の厳密な内部へ取り込まれた石は、自分の石でも相手の石でも取り除かれます（境界上なら残る）。</li>
@@ -324,51 +324,89 @@ function canPlace(v,p){
   if(isCorner(v)&&cornersUsed[p]>=2) return false;
   return true;
 }
-// walls for X: along each straight rail, segments between X-stones.
-// Enemy stones on that line do not break the boundary; they can sit on the edge.
-function wallEdges(X){
+// Same-color stones span a straight wall. We first find areas cut off from the
+// outside, then validate each area's own boundary corners independently.
+function wallEdges(p){
   const wall=new Set();
   for(const rail of RAILS){
     let first=-1,last=-1;
-    for(let k=0;k<rail.length;k++) if(stones[rail[k]]===X){ if(first<0)first=k; last=k; }
-    if(first>=0&&last>first) for(let k=first;k<last;k++) wall.add(ekey(rail[k],rail[k+1]));
+    for(let i=0;i<rail.length;i++) if(stones[rail[i]]===p){if(first<0)first=i;last=i;}
+    if(first>=0&&last>first) for(let i=first;i<last;i++) wall.add(ekey(rail[i],rail[i+1]));
   }
   return wall;
 }
-function prunedWallEdges(X){
-  const wall=wallEdges(X);
-  const deg={};
-  const addDeg=(v,k)=>{(deg[v]=deg[v]||[]).push(k);};
-  for(const k of wall){
-    const [a,b]=k.split('_').map(Number);
-    addDeg(a,k); addDeg(b,k);
-  }
+function prunedWallEdges(p){
+  const wall=wallEdges(p),incident=Array.from({length:NV},()=>[]);
+  for(const key of wall){const [a,b]=key.split('_').map(Number);incident[a].push(key);incident[b].push(key);}
   let changed=true;
   while(changed){
     changed=false;
-    for(const v in deg){
-      const edges=deg[v].filter(k=>wall.has(k));
-      if(edges.length===1){
-        wall.delete(edges[0]);
-        changed=true;
-      }
+    for(const edges of incident){
+      const remaining=edges.filter(key=>wall.has(key));
+      if(remaining.length===1){wall.delete(remaining[0]);changed=true;}
     }
   }
   return wall;
 }
-function enclosedBy(X){
-  const wall=prunedWallEdges(X);
-  const seen=new Array(NF).fill(false), q=[];
-  for(const k of boundaryEdges) if(!wall.has(k)){const f=edgeFaces[k][0]; if(!seen[f]){seen[f]=true;q.push(f);}}
+function enclosedFaces(wall){
+  const seen=new Array(NF).fill(false),q=[];
+  for(const key of boundaryEdges) if(!wall.has(key)){
+    const f=edgeFaces[key][0]; if(!seen[f]){seen[f]=true;q.push(f);}
+  }
   while(q.length){
     const f=q.pop();
     for(const [u,w] of faceEdges[f]){
-      if(wall.has(ekey(u,w))) continue;
-      for(const g of edgeFaces[ekey(u,w)]) if(!seen[g]){seen[g]=true;q.push(g);}
+      const key=ekey(u,w); if(wall.has(key)) continue;
+      for(const g of edgeFaces[key]) if(!seen[g]){seen[g]=true;q.push(g);}
     }
   }
-  const enc=[]; for(let f=0;f<NF;f++) if(!seen[f]) enc.push(f);
-  return enc;
+  const result=[]; for(let f=0;f<NF;f++) if(!seen[f]) result.push(f);
+  return result;
+}
+function enclosedComponents(enclosed){
+  const components=[],unvisited=new Set(enclosed);
+  while(unvisited.size){
+    const start=unvisited.values().next().value,component=[],q=[start];unvisited.delete(start);
+    while(q.length){
+      const f=q.pop();component.push(f);
+      for(const [u,w] of faceEdges[f]) for(const g of edgeFaces[ekey(u,w)]){
+        if(unvisited.delete(g))q.push(g);
+      }
+    }
+    components.push(component);
+  }
+  return components;
+}
+function isStraight(previous,v,next){
+  const ax=V[previous][0]-V[v][0],ay=V[previous][1]-V[v][1];
+  const bx=V[next][0]-V[v][0],by=V[next][1]-V[v][1];
+  return Math.abs(ax*by-ay*bx)<=1e-9&&ax*bx+ay*by<0;
+}
+function hasValidBoundary(component,p,placed){
+  const edgeCounts=new Map();
+  for(const f of component) for(const [u,w] of faceEdges[f]){
+    const key=ekey(u,w);edgeCounts.set(key,(edgeCounts.get(key)||0)+1);
+  }
+  const boundaryAt=Array.from({length:NV},()=>[]);
+  for(const [key,count] of edgeCounts) if(count===1){
+    const [a,b]=key.split('_').map(Number);boundaryAt[a].push(key);boundaryAt[b].push(key);
+  }
+  const required=[];
+  for(let v=0;v<NV;v++) if(boundaryAt[v].length){
+    if(boundaryAt[v].length!==2) return false;
+    const other=key=>{const [a,b]=key.split('_').map(Number);return a===v?b:a;};
+    if(!isStraight(other(boundaryAt[v][0]),v,other(boundaryAt[v][1]))) required.push(v);
+  }
+  if(required.length<3||!required.includes(placed)) return false;
+  for(const v of required) if(stones[v]!==p) return false;
+  return true;
+}
+function completedFaces(p,placed){
+  const enclosed=enclosedFaces(prunedWallEdges(p)),captured=[];
+  for(const component of enclosedComponents(enclosed)){
+    if(hasValidBoundary(component,p,placed)) captured.push(...component);
+  }
+  return [...new Set(captured)];
 }
 function recountCorners(){
   cornersUsed={1:0,2:0};
@@ -389,13 +427,9 @@ function cleanupInteriorStones(){
 function resolve(){
   return cleanupInteriorStones();
 }
-function captureCompletedFaces(p,beforeEnc){
-  const afterEnc=new Set(enclosedBy(p));
-  let hasNew=false;
-  for(const f of afterEnc) if(!beforeEnc.has(f)){hasNew=true; break;}
-  if(!hasNew) return [];
+function captureCompletedFaces(p,placed){
   const captured=[];
-  for(const f of afterEnc){
+  for(const f of completedFaces(p,placed)){
     if(owner[f]!==p) captured.push(f);
     owner[f]=p;
   }
@@ -455,10 +489,9 @@ function place(v, remote=false){
   pushH();
   const before=countOf(turn);
   const beforeOwner=owner.slice();
-  const beforeEnc=new Set(enclosedBy(turn));
   stones[v]=turn; if(isCorner(v)) cornersUsed[turn]++;
   ply++;
-  captureCompletedFaces(turn,beforeEnc);
+  captureCompletedFaces(turn,v);
   cleanupInteriorStones();
   const gained=countOf(turn)-before;
   lastPlacedVertex=v;

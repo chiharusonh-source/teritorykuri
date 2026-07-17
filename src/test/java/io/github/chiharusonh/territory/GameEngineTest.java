@@ -37,14 +37,45 @@ class GameEngineTest {
     }
 
     @Test
-    void deadEndWallsArePruned() {
+    void turnAtOpponentPointDoesNotCompleteHourglassTriangles() {
         GameState state = new GameState();
+        state.ply = 1;
+        state.turn = 2;
         state.stones[23] = 2;
         state.stones[24] = 2;
-        state.stones[31] = 2;
+        state.stones[30] = 2;
+        state.stones[41] = 1;
 
-        assertThat(engine.prunedWallEdges(state, 2)).isEmpty();
-        assertThat(engine.enclosedBy(state, 2)).isEmpty();
+        GameEngine.MoveResult result = engine.place(state, 2, 31);
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(state.owners[24]).isZero();
+        assertThat(state.owners[31]).isZero();
+    }
+
+    @Test
+    void turnAtOwnPointCompletesTriangle() {
+        GameState state = new GameState();
+        state.ply = 1;
+        state.turn = 2;
+        state.stones[23] = 2;
+        state.stones[24] = 2;
+
+        GameEngine.MoveResult result = engine.place(state, 2, 41);
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(state.owners[24]).isEqualTo(2);
+    }
+
+    @Test
+    void opponentStoneOnStraightMidpointDoesNotBreakShape() {
+        GameState state = new GameState();
+        state.stones[6] = 2;
+        state.stones[14] = 2;
+        state.stones[22] = 2;
+        state.stones[37] = 1;
+
+        assertThat(engine.completedFaces(state, 2, 22)).contains(13);
     }
 
     @Test
@@ -64,15 +95,15 @@ class GameEngineTest {
     }
 
     @Test
-    void enclosedCalculationIsDeterministic() {
+    void completedCandidateCalculationIsDeterministic() {
         GameState state = new GameState();
         state.stones[2] = 1;
         state.stones[3] = 1;
         state.stones[8] = 1;
         state.stones[9] = 1;
 
-        Set<Integer> first = engine.enclosedBy(state, 1);
-        Set<Integer> second = engine.enclosedBy(state, 1);
+        Set<Integer> first = engine.completedFaces(state, 1, 9);
+        Set<Integer> second = engine.completedFaces(state, 1, 9);
 
         assertThat(second).isEqualTo(first).contains(2);
     }
