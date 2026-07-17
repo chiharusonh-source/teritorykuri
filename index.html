@@ -382,7 +382,7 @@ function isStraight(previous,v,next){
   const bx=V[next][0]-V[v][0],by=V[next][1]-V[v][1];
   return Math.abs(ax*by-ay*bx)<=1e-9&&ax*bx+ay*by<0;
 }
-function hasValidBoundary(component,p,placed){
+function boundaryInfo(component){
   const edgeCounts=new Map();
   for(const f of component) for(const [u,w] of faceEdges[f]){
     const key=ekey(u,w);edgeCounts.set(key,(edgeCounts.get(key)||0)+1);
@@ -393,20 +393,35 @@ function hasValidBoundary(component,p,placed){
   }
   const required=[];
   for(let v=0;v<NV;v++) if(boundaryAt[v].length){
-    if(boundaryAt[v].length!==2) return false;
+    if(boundaryAt[v].length!==2) return {simple:false,required:[]};
     const other=key=>{const [a,b]=key.split('_').map(Number);return a===v?b:a;};
     if(!isStraight(other(boundaryAt[v][0]),v,other(boundaryAt[v][1]))) required.push(v);
   }
-  if(required.length<3||!required.includes(placed)) return false;
-  for(const v of required) if(stones[v]!==p) return false;
-  return true;
+  return {simple:true,required};
+}
+function collectValidSubregions(component,p,placed,visited,captured){
+  if(!component.length) return;
+  const key=[...component].sort((a,b)=>a-b).join(',');
+  if(visited.has(key)) return;
+  visited.add(key);
+  const boundary=boundaryInfo(component);
+  if(!boundary.simple||boundary.required.length<3||!boundary.required.includes(placed)) return;
+  const wrong=boundary.required.filter(v=>stones[v]!==p);
+  if(!wrong.length){for(const f of component) captured.add(f);return;}
+  for(const v of wrong) for(const f of component){
+    if(!BOARD.faces[f].vs.includes(v)) continue;
+    const remaining=component.filter(candidate=>candidate!==f);
+    for(const subregion of enclosedComponents(remaining)){
+      collectValidSubregions(subregion,p,placed,visited,captured);
+    }
+  }
 }
 function completedFaces(p,placed){
-  const enclosed=enclosedFaces(prunedWallEdges(p)),captured=[];
+  const enclosed=enclosedFaces(prunedWallEdges(p)),captured=new Set(),visited=new Set();
   for(const component of enclosedComponents(enclosed)){
-    if(hasValidBoundary(component,p,placed)) captured.push(...component);
+    collectValidSubregions(component,p,placed,visited,captured);
   }
-  return [...new Set(captured)];
+  return [...captured];
 }
 function recountCorners(){
   cornersUsed={1:0,2:0};

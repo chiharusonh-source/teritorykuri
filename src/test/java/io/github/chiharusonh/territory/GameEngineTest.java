@@ -68,6 +68,25 @@ class GameEngineTest {
     }
 
     @Test
+    void invalidAdjacentTriangleDoesNotCancelValidRectangle() {
+        GameState state = new GameState();
+        state.ply = 1;
+        state.turn = 2;
+        state.stones[22] = 2;
+        state.stones[23] = 2;
+        state.stones[24] = 2;
+        state.stones[30] = 2;
+        state.stones[41] = 1;
+
+        GameEngine.MoveResult result = engine.place(state, 2, 31);
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(state.owners[26]).isEqualTo(2);
+        assertThat(state.owners[31]).isEqualTo(2);
+        assertThat(state.owners[24]).isZero();
+    }
+
+    @Test
     void opponentStoneOnStraightMidpointDoesNotBreakShape() {
         GameState state = new GameState();
         state.stones[6] = 2;

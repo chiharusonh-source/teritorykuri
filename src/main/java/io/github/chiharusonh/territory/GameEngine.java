@@ -95,12 +95,55 @@ final class GameEngine {
         Set<Edge> wall = prunedWallEdges(state, player);
         Set<Integer> enclosed = enclosedFaces(wall);
         Set<Integer> captured = new HashSet<>();
+        Set<Set<Integer>> visited = new HashSet<>();
         for (Set<Integer> component : enclosedComponents(enclosed)) {
-            if (hasValidBoundary(state, player, placedVertex, component)) {
-                captured.addAll(component);
-            }
+            collectValidSubregions(state, player, placedVertex, component, visited, captured);
         }
         return captured;
+    }
+
+    private void collectValidSubregions(
+            GameState state,
+            int player,
+            int placedVertex,
+            Set<Integer> component,
+            Set<Set<Integer>> visited,
+            Set<Integer> captured) {
+        if (component.isEmpty() || !visited.add(Set.copyOf(component))) {
+            return;
+        }
+
+        BoundaryInfo boundary = boundaryInfo(component);
+        if (!boundary.simple()
+                || boundary.requiredCorners().size() < 3
+                || !boundary.requiredCorners().contains(placedVertex)) {
+            return;
+        }
+
+        Set<Integer> wrongCorners = new HashSet<>();
+        for (int vertex : boundary.requiredCorners()) {
+            if (state.stones[vertex] != player) {
+                wrongCorners.add(vertex);
+            }
+        }
+        if (wrongCorners.isEmpty()) {
+            captured.addAll(component);
+            return;
+        }
+
+        // A neighboring invalid loop must not cancel a valid loop completed by the same move.
+        for (int wrongCorner : wrongCorners) {
+            for (int face : component) {
+                if (!Board.contains(Board.FACES[face], wrongCorner)) {
+                    continue;
+                }
+                Set<Integer> remaining = new HashSet<>(component);
+                remaining.remove(face);
+                for (Set<Integer> subregion : enclosedComponents(remaining)) {
+                    collectValidSubregions(state, player, placedVertex, subregion, visited, captured);
+                }
+            }
+        }
     }
 
     private Set<Edge> wallEdges(GameState state, int player) {
@@ -212,7 +255,7 @@ final class GameEngine {
         return components;
     }
 
-    private boolean hasValidBoundary(GameState state, int player, int placedVertex, Set<Integer> component) {
+    private BoundaryInfo boundaryInfo(Set<Integer> component) {
         Map<Edge, Integer> edgeCounts = new HashMap<>();
         for (int face : component) {
             for (Edge edge : Board.FACE_EDGES.get(face)) {
@@ -232,7 +275,7 @@ final class GameEngine {
             int vertex = entry.getKey();
             List<Edge> edges = entry.getValue();
             if (edges.size() != 2) {
-                return false;
+                return new BoundaryInfo(false, Set.of());
             }
             int previous = other(edges.get(0), vertex);
             int next = other(edges.get(1), vertex);
@@ -240,9 +283,10 @@ final class GameEngine {
                 requiredCorners.add(vertex);
             }
         }
-        return requiredCorners.size() >= 3
-                && requiredCorners.contains(placedVertex)
-                && requiredCorners.stream().allMatch(vertex -> state.stones[vertex] == player);
+        return new BoundaryInfo(true, Set.copyOf(requiredCorners));
+    }
+
+    private record BoundaryInfo(boolean simple, Set<Integer> requiredCorners) {
     }
 
     private int other(Edge edge, int vertex) {
